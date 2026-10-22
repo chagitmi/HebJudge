@@ -235,7 +235,7 @@ HebJudge/
 | Execution | `asyncio` | Concurrent runs save time and cost |
 | Interface | CLI | Sufficient for v1 scope |
 | Testing | pytest on deterministic components | Engineering maturity |
-| Reproducibility | Log model version and date, fixed temperature | Models change over time; findings must be dated |
+| Reproducibility | Log model version, date, temperature and reasoning effort | Models change over time; findings must be dated (see D-15) |
 
 ### 6.4 Security and hygiene
 
@@ -339,8 +339,8 @@ All attacks in this project run against the project's own mock agent, not agains
 
 - [ ] Verify name availability: GitHub, PyPI (`hebjudge`), Hugging Face.
 - [ ] Add repository topics: `llm`, `evaluation`, `red-teaming`, `hebrew`.
-- [ ] Set a spending cap and create a dedicated API key.
-- [ ] Choose the judge model and the tested models (check the provider's current model list).
+- [X] Set a spending cap and create a dedicated API key.
+- [X] Choose the judge model and the tested models (check the provider's current model list).
 - [ ] Decide the number of manually labeled transcripts (50 minimum, 80 target).
 - [ ] Create `docs/DECISIONS.md` and log decisions made so far (name, scope, single-turn, English docs).
 

@@ -5,6 +5,21 @@ A running record of project decisions and the reasoning behind them. New entries
 Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
+## 2026-10-22: Environment and model selection
+
+### D-15: Log reasoning effort, not only temperature
+
+- **Decision:** For every model call, record the reasoning-effort setting alongside temperature. Where a model supports it, run with reasoning effort set to "none" so that temperature applies.
+- **Why:** On current OpenAI models, temperature only takes effect when reasoning is off. Fixing temperature alone does not make runs reproducible.
+- **Implication:** Updates the reproducibility row in SPEC section 6.3.
+
+### D-14: Budget model lineup
+
+- **Decision:** Tested models: `gpt-6-luna`, `gpt-4o-mini`, `gpt-4.1-mini`. Judge: `gpt-6-sol` with reasoning off. The judge runs only on transcripts that deterministic checks did not resolve. Spending cap: $10.
+- **Why:** Estimated total cost drops from about $100 to about $5–9. Low-cost models are also what small businesses, the intended audience, typically deploy, so the lineup reflects real usage. The judge is not among the tested models, consistent with D-09.
+- **Alternatives considered:** Four tested models including `gpt-6-sol` and `gpt-5.6-terra`, with `gpt-6-astra` as judge (about $100; would add a model-strength comparison).
+- **Trade-off:** The study cannot say whether stronger models resist injection better. A weaker judge than Astra puts more weight on human calibration (D-08), which is already planned.
+- **Revisit:** If budget remains after the full run, add one stronger tested model as an extension.
 
 ## 2026-10-21: Specification phase
 
