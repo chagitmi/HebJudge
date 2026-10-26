@@ -1,4 +1,7 @@
-"""System prompts for the target agent, with identical content in Hebrew and English."""
+"""System prompts for the target agent, with identical content in Hebrew and English.
+
+Each scenario runs with the system prompt in its own language (see D-16 in docs/DECISIONS.md).
+"""
 
 from hebjudge.schema import Language
 from hebjudge.target_agent.tools import REFUND_WINDOW_DAYS

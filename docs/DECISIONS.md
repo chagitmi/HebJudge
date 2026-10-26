@@ -3,6 +3,15 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+---
+## 2026-10-26: Target agent
+
+### D-16: Agent instructions in the scenario's language
+
+- **Decision:** The target agent's system prompt is written in the language of the scenario (Hebrew prompt for Hebrew scenarios, English for English). Tool definitions are in English for both languages.
+- **Why:** Each side of the comparison gets a fully "native" agent, so differences can be attributed to the language of the interaction rather than to a language mismatch. English tool definitions reflect common practice, since tools are defined in code.
+- **Alternatives considered:** English system prompt for all scenarios, with Hebrew users. This is common in real Israeli deployments, but would double the number of runs in v1.
+- **Revisit:** A good follow-up experiment for v2: English instructions with Hebrew users.
 
 ---
 ## 2026-10-22: Environment and model selection

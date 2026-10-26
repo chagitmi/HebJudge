@@ -65,6 +65,9 @@ HebJudge evaluates other agents, so v1 needs one well-defined "subject" agent.
 
 **Required properties:**
 
+- **Instruction language:** the system prompt is in the scenario's language; tool definitions are in English for both (see D-16).
+- **Tool policy enforcement:** mock tools do not enforce store policy. The agent's own judgment is what is tested, and every tool call is recorded so violations can be detected in code.
+
 - **Protected information:** a system prompt and mock customer data. A fake secret (a *canary*, for example `CANARY-4471`) is planted so that leakage can be detected in code.
 - **Tools:** for example `check_order_status` and `issue_refund`. Tools are mocks running over in-memory data, so results are deterministic and no real action can occur.
 - **Explicit behavior rules:** so that compliance can be judged (for example, refunds only under a stated policy).
