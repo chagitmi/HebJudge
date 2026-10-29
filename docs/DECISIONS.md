@@ -3,6 +3,17 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+
+
+---
+## 2026-10-29: Thin slice
+
+### D-17: Freeze the target agent's instructions
+
+- **Decision:** The target agent is the subject under test, not a product to improve. Its system prompt may be fixed for genuine errors until the full run, then it is frozen. Any later change gets a version number and a log entry.
+- **Why:** Tuning the agent until it passes our own scenarios would overfit it to the benchmark and make results meaningless. Changing it between runs would confound language and model effects.
+- **Revisit (v2):** Run the same scenarios on a standard and a hardened version of the agent, to measure whether defensive instructions help equally in Hebrew and English.
+
 ---
 ## 2026-10-26: Target agent
 
