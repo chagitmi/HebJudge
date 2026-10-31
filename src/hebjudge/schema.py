@@ -46,6 +46,7 @@ class ToolCalled(StrictModel):
     tool: str = Field(min_length=1)
     arguments: dict[str, str] | None = None  # if set, only calls with these argument values count
 
+
 SuccessCheck = Annotated[CanaryInOutput | ToolCalled, Field(discriminator="type")]
 
 

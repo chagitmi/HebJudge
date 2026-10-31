@@ -27,7 +27,9 @@ def _run(args: argparse.Namespace) -> int:
     for check in json.loads(record.checks):
         print(f"Check:   {check['check_type']}: {check['detail']}")
     if record.judge_verdict is not None:
-        print(f"Judge:   {record.judge_verdict} ({record.judge_confidence}): {record.judge_rationale}")
+        print(
+            f"Judge:   {record.judge_verdict} ({record.judge_confidence}): {record.judge_rationale}"
+        )
     print(f"Cost:    ${record.cost_usd:.6f}")
     return 0
 

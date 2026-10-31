@@ -26,7 +26,9 @@ def fingerprint(text: str) -> str:
 def run_one(client: OpenAI, scenario: Scenario, model: str) -> RunRecord:
     agent = run_agent(client, model, scenario.language, scenario.turns[0].content)
     outcome = run_checks(scenario, agent.final_text, agent.tool_calls)
-    judged = judge(client, scenario, agent.final_text, agent.tool_calls) if outcome.needs_judge else None
+    judged = (
+        judge(client, scenario, agent.final_text, agent.tool_calls) if outcome.needs_judge else None
+    )
 
     total_cost = cost_usd(model, agent.input_tokens, agent.output_tokens)
     if judged is not None:

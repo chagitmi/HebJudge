@@ -50,7 +50,8 @@ def render_html(rows: Sequence[Row]) -> str:
     for r in rows:
         verdict, by = final_verdict(r)
         reason = r["judge_rationale"] or (
-            "A deterministic check triggered." if r["attack_succeeded_in_code"]
+            "A deterministic check triggered."
+            if r["attack_succeeded_in_code"]
             else "No deterministic check triggered."
         )
         table_rows.append(
@@ -62,7 +63,7 @@ def render_html(rows: Sequence[Row]) -> str:
             f"<td>{_e(VERDICT_LABELS[verdict])}</td>"
             f"<td>{_e(by)}</td>"
             f"<td>${r['cost_usd']:.4f}</td>"
-            f'<td><details><summary>show</summary>'
+            f"<td><details><summary>show</summary>"
             f'<p dir="auto">{_e(r["final_text"])}</p>'
             f"<p><em>{_e(reason)}</em></p></details></td>"
             "</tr>"
@@ -87,11 +88,11 @@ def render_html(rows: Sequence[Row]) -> str:
 <body>
 <h1>HebJudge report</h1>
 <p class="summary">
-  <span>Runs: <strong>{s['runs']}</strong></span>
+  <span>Runs: <strong>{s["runs"]}</strong></span>
   <span>Attack success rate: <strong>{asr}</strong></span>
-  <span>Decided in code: <strong>{s['decided_in_code']}</strong></span>
-  <span>Unclear: <strong>{s['unclear']}</strong></span>
-  <span>Total cost: <strong>${s['total_cost_usd']:.4f}</strong></span>
+  <span>Decided in code: <strong>{s["decided_in_code"]}</strong></span>
+  <span>Unclear: <strong>{s["unclear"]}</strong></span>
+  <span>Total cost: <strong>${s["total_cost_usd"]:.4f}</strong></span>
 </p>
 <table>
 <thead><tr><th>Time (UTC)</th><th>Scenario</th><th>Lang</th><th>Model</th>

@@ -1,4 +1,5 @@
 import re
+import sqlite3
 
 import pytest
 
@@ -12,14 +13,30 @@ HEBREW_REPLY = "מצטער, איני יכול לחשוף הוראות פנימי
 def make_record(**overrides):
     data = {name: None for name in COLUMNS}
     data.update(
-        run_id="abc123", created_at="2026-10-31T19:00:00+00:00", hebjudge_version="0.1.0",
-        scenario_id="inj-direct-001-he", pair_id="inj-direct-001", language="he",
-        category="direct_injection", scenario_hash="h1", system_prompt_hash="h2",
-        agent_model="gpt-6-luna", agent_model_version="gpt-6-luna", agent_settings="{}",
-        user_message="שלום", final_text=HEBREW_REPLY, tool_calls="[]",
-        agent_input_tokens=432, agent_output_tokens=46, agent_latency_s=2.8,
-        agent_rounds=1, hit_round_limit=False, checks="[]",
-        attack_succeeded_in_code=False, needs_judge=True, cost_usd=0.0001,
+        run_id="abc123",
+        created_at="2026-10-31T19:00:00+00:00",
+        hebjudge_version="0.1.0",
+        scenario_id="inj-direct-001-he",
+        pair_id="inj-direct-001",
+        language="he",
+        category="direct_injection",
+        scenario_hash="h1",
+        system_prompt_hash="h2",
+        agent_model="gpt-6-luna",
+        agent_model_version="gpt-6-luna",
+        agent_settings="{}",
+        user_message="שלום",
+        final_text=HEBREW_REPLY,
+        tool_calls="[]",
+        agent_input_tokens=432,
+        agent_output_tokens=46,
+        agent_latency_s=2.8,
+        agent_rounds=1,
+        hit_round_limit=False,
+        checks="[]",
+        attack_succeeded_in_code=False,
+        needs_judge=True,
+        cost_usd=0.0001,
     )
     data.update(overrides)
     return RunRecord(**data)
@@ -42,7 +59,7 @@ def test_save_and_read_back_keeps_hebrew(tmp_path):
 def test_run_ids_are_unique(tmp_path):
     conn = connect(tmp_path / "traces.sqlite")
     save_run(conn, make_record())
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.IntegrityError):
         save_run(conn, make_record())
 
 

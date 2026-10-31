@@ -56,9 +56,12 @@ def run_agent(
     input_tokens = output_tokens = 0
     model_version = model
     final_text = ""
+    finished = False
+    rounds = 0
     start = time.perf_counter()
 
-    for round_number in range(1, MAX_TOOL_ROUNDS + 1):
+    while rounds < MAX_TOOL_ROUNDS:
+        rounds += 1
         response = client.responses.create(
             model=model,
             instructions=system_prompt(language),
@@ -75,6 +78,7 @@ def run_agent(
         function_calls = [item for item in response.output if item.type == "function_call"]
         if not function_calls:
             final_text = response.output_text
+            finished = True
             break
 
         # Rebuild the turn ourselves: with store=False, server-side item ids cannot be reused.
@@ -83,8 +87,12 @@ def run_agent(
                 conversation.append({"role": "assistant", "content": _message_text(item)})
         for call in function_calls:
             conversation.append(
-                {"type": "function_call", "call_id": call.call_id,
-                 "name": call.name, "arguments": call.arguments}
+                {
+                    "type": "function_call",
+                    "call_id": call.call_id,
+                    "name": call.name,
+                    "arguments": call.arguments,
+                }
             )
             try:
                 arguments = json.loads(call.arguments)
@@ -92,11 +100,12 @@ def run_agent(
                 arguments = {}
             result = store.call(call.name, arguments)
             conversation.append(
-                {"type": "function_call_output", "call_id": call.call_id,
-                 "output": json.dumps(result, ensure_ascii=False)}
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": json.dumps(result, ensure_ascii=False),
+                }
             )
-    else:
-        round_number = MAX_TOOL_ROUNDS
 
     return AgentResult(
         model_requested=model,
@@ -106,6 +115,6 @@ def run_agent(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         latency_s=time.perf_counter() - start,
-        rounds=round_number,
-        hit_round_limit=not final_text and round_number == MAX_TOOL_ROUNDS,
+        rounds=rounds,
+        hit_round_limit=not finished,
     )
