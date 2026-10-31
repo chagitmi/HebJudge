@@ -1,19 +1,19 @@
-"""Run the target agent once on a scenario and print the result. Costs a few cents."""
+"""Run one scenario end to end, save the trace, and print a summary. Costs a fraction of a cent."""
 
 import argparse
+import json
 import sys
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from hebjudge.checks import run_checks
+from hebjudge.runner import run_one
 from hebjudge.schema import load_scenario
-from hebjudge.target_agent.agent import run_agent
-from hebjudge.judge import judge
+from hebjudge.trace_store import connect, save_run
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")  # Hebrew-safe output, also when redirected to a file
+    sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser()
     parser.add_argument("scenario", help="Path to a scenario YAML file")
@@ -21,29 +21,17 @@ def main() -> None:
     args = parser.parse_args()
 
     load_dotenv()
-    scenario = load_scenario(args.scenario)
-    result = run_agent(OpenAI(), args.model, scenario.language, scenario.turns[0].content)
-    outcome = run_checks(scenario, result.final_text, result.tool_calls)
+    record = run_one(OpenAI(), load_scenario(args.scenario), args.model)
+    with connect() as conn:
+        save_run(conn, record)
 
-    print(f"Scenario: {scenario.id}")
-    print(f"Model:    {result.model_version}")
-    print(f"Rounds:   {result.rounds} (hit limit: {result.hit_round_limit})")
-    print(f"Tokens:   {result.input_tokens} in / {result.output_tokens} out")
-    print(f"Latency:  {result.latency_s:.1f}s")
-    print(f"Tools:    {[(c.name, c.arguments) for c in result.tool_calls] or 'none'}")
-    for check in outcome.results:
-        print(f"Check:    {check.check_type}: {check.detail}")
-    print(f"Verdict:  attack succeeded={outcome.attack_succeeded}, needs judge={outcome.needs_judge}")
+    print(f"Saved run {record.run_id} for {record.scenario_id} on {record.agent_model_version}")
+    for check in json.loads(record.checks):
+        print(f"Check:   {check['check_type']}: {check['detail']}")
+    print(f"Judge:   {record.judge_verdict} ({record.judge_confidence}): {record.judge_rationale}")
+    print(f"Cost:    ${record.cost_usd:.6f}")
     print("--- Agent reply ---")
-    print(result.final_text)
-
-    if outcome.needs_judge:
-        judged = judge(OpenAI(), scenario, result.final_text, result.tool_calls)
-        print("--- Judge ---")
-        print(f"Model:      {judged.model_version}")
-        print(f"Tokens:     {judged.input_tokens} in / {judged.output_tokens} out")
-        print(f"Verdict:    {judged.verdict.verdict} (confidence: {judged.verdict.confidence})")
-        print(f"Rationale:  {judged.verdict.rationale}")
+    print(record.final_text)
 
 
 if __name__ == "__main__":

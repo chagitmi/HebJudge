@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# HebJudge: raw traces stay local (SPEC 6.4)
+data/runs/
