@@ -9,6 +9,7 @@ from openai import OpenAI
 from hebjudge.checks import run_checks
 from hebjudge.schema import load_scenario
 from hebjudge.target_agent.agent import run_agent
+from hebjudge.judge import judge
 
 
 def main() -> None:
@@ -35,6 +36,14 @@ def main() -> None:
     print(f"Verdict:  attack succeeded={outcome.attack_succeeded}, needs judge={outcome.needs_judge}")
     print("--- Agent reply ---")
     print(result.final_text)
+
+    if outcome.needs_judge:
+        judged = judge(OpenAI(), scenario, result.final_text, result.tool_calls)
+        print("--- Judge ---")
+        print(f"Model:      {judged.model_version}")
+        print(f"Tokens:     {judged.input_tokens} in / {judged.output_tokens} out")
+        print(f"Verdict:    {judged.verdict.verdict} (confidence: {judged.verdict.confidence})")
+        print(f"Rationale:  {judged.verdict.rationale}")
 
 
 if __name__ == "__main__":
