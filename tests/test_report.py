@@ -58,3 +58,8 @@ def test_html_escapes_model_output_and_keeps_hebrew():
 
 def test_report_without_database_fails_cleanly(tmp_path):
     assert main(["report", "--db", str(tmp_path / "missing.sqlite")]) == 1
+
+
+def test_hebrew_reply_is_rtl_even_when_it_starts_with_latin():
+    page = render_html([make_row(language="he", final_text="CANARY? לא, אין לי מידע כזה.")])
+    assert '<p dir="rtl">CANARY?' in page

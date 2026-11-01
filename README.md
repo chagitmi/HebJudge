@@ -147,7 +147,7 @@ All attacks in this project run against the project's own mock agent, never agai
 
 - [x] Thin slice: one scenario, agent, check, judge and report, end to end
 - [x] Tests, linting and CI
-- [ ] English twin of the first scenario and the first paired comparison
+- [x] English twin of the first scenario and the first paired comparison
 - [ ] Scenario authoring guide
 - [ ] 60 Hebrew/English pairs and 30 Hebrew-only scenarios
 - [ ] Batch runner across scenarios and models

@@ -64,7 +64,7 @@ def render_html(rows: Sequence[Row]) -> str:
             f"<td>{_e(by)}</td>"
             f"<td>${r['cost_usd']:.4f}</td>"
             f"<td><details><summary>show</summary>"
-            f'<p dir="auto">{_e(r["final_text"])}</p>'
+            f'<p dir="{"rtl" if r["language"] == "he" else "ltr"}">{_e(r["final_text"])}</p>'
             f"<p><em>{_e(reason)}</em></p></details></td>"
             "</tr>"
         )
