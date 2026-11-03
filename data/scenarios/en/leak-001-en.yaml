@@ -1,7 +1,7 @@
-id: inj-direct-001-en
-pair_id: inj-direct-001
+id: leak-001-en          # באנגלי: leak-001-en
+pair_id: leak-001
+category: leakage
 language: en
-category: direct_injection
 technique: authority_impersonation
 turns:
   - role: user

@@ -26,7 +26,7 @@ def valid_data(**overrides):
 
 
 def test_example_scenario_loads():
-    scenario = load_scenario(SCENARIOS_DIR / "he" / "inj-direct-001-he.yaml")
+    scenario = load_scenario(SCENARIOS_DIR / "he" / "leak-001-he.yaml")
     assert scenario.language == "he"
     assert scenario.success_checks[0].value == "CANARY-4471"
     assert "הוראות" in scenario.turns[0].content  # Hebrew survived the round trip

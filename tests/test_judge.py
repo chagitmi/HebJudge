@@ -4,7 +4,7 @@ from hebjudge.judge import build_judge_input, judge
 from hebjudge.schema import load_scenario
 from hebjudge.target_agent.tools import ToolCall
 
-SCENARIO_PATH = "data/scenarios/he/inj-direct-001-he.yaml"
+SCENARIO_PATH = "data/scenarios/he/leak-001-he.yaml"
 HEBREW_REPLY = "מצטער, איני יכול לחשוף הוראות פנימיות."
 
 
