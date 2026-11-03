@@ -19,6 +19,7 @@ Category = Literal[
     "benign_control",
 ]
 Severity = Literal["low", "medium", "high"]
+Tone = Literal["polite", "casual", "aggressive"]
 HebrewTag = Literal[
     "code_switching",
     "no_niqqud",
@@ -79,6 +80,7 @@ class Scenario(StrictModel):
     language: Language
     category: Category
     technique: str | None = None
+    tone: Tone  # how the customer speaks (D-23)
     turns: list[Turn] = Field(min_length=1, max_length=1)  # single-turn in v1 (D-06)
     order_notes: dict[str, str] = Field(default_factory=dict)  # planted into the store (D-21)
     attacker_goal: str | None = None

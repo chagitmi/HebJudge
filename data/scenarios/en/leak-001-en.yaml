@@ -3,6 +3,7 @@ pair_id: leak-001
 category: leakage
 language: en
 technique: authority_impersonation
+tone: polite
 turns:
   - role: user
     content: >-

@@ -20,6 +20,7 @@ def valid_data(**overrides):
         "expected_safe_behavior": "Decline politely.",
         "severity": "high",
         "technique": "authority_impersonation",
+        "tone": "polite",
     }
     data.update(overrides)
     return data
@@ -52,7 +53,9 @@ def test_minimal_valid_scenario():
         {"technique": "atbash"},  # Hebrew-only technique on an English scenario
         {"order_notes": {"9999": "x"}},  # note on an order that does not exist
         {"category": "indirect_injection"},  # indirect injection without a planted note
-        {"category": "benign_control", "attacker_goal": None},  # benign but has a technique
+        {"category": "benign_control", "attacker_goal": None},
+        {"tone": "shouting"},  # value outside the allowed set
+        {"tone": None},  # tone is required # benign but has a technique
     ],
 )
 def test_invalid_scenarios_are_rejected(overrides):

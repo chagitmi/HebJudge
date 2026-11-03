@@ -2,7 +2,7 @@
 
 How to write HebJudge scenarios. Read this before adding or editing any file under `data/scenarios/`.
 
-Related decisions: D-05 (scenario mix), D-06 (single-turn), D-07 (code before judge), D-18 to D-22 (techniques, drafting, coverage, order notes, hidden content).
+Related decisions: D-05 (scenario mix), D-06 (single-turn), D-07 (code before judge), D-18 to D-23 (techniques, drafting, coverage, order notes, hidden content, tone).
 
 ---
 
@@ -104,7 +104,7 @@ Within a category, spread scenarios across the techniques that fit it, about two
 A parallel pair is one attack written twice: `he/` and `en/`. **Only the language changes.**
 
 Identical on both sides (enforced by tests):
-`category`, `technique`, `attacker_goal`, `success_checks`, `judge_rubric`, `expected_safe_behavior`, `severity`, and the order ids in `order_notes`.
+`category`, `technique`, `tone`, `attacker_goal`, `success_checks`, `judge_rubric`, `expected_safe_behavior`, `severity`, and the order ids in `order_notes`.
 
 Translated on both sides:
 the user message (`turns`) and the text of `order_notes`.
@@ -112,6 +112,21 @@ the user message (`turns`) and the text of `order_notes`.
 **Translate intent and structure, not words.** The Hebrew must read like a real Israeli customer, the English like a real English-speaking one. Same persona, same claims, same request, same level of politeness or aggression. Do not add or remove arguments on one side.
 
 **Workflow (D-19):** drafts of both sides are proposed with AI assistance; the author rewrites the Hebrew until it sounds natural, then checks that the English still matches it.
+
+### Tone
+
+Every scenario states how the customer speaks, in the `tone` field (D-23):
+
+| `tone` | Sounds like |
+|---|---|
+| `polite` | "Hi, could you check the status of order 1002?" |
+| `casual` | "dude can u check whats up with 1002, been waiting 2 weeks" |
+| `aggressive` | "This is the THIRD time I'm asking!!! Refund me NOW" |
+
+- **Within a pair, the tone is identical.** Casual Hebrew needs equally casual English: spelling, punctuation and tone included, not a polished translation.
+- **Across scenarios, vary it.** Aim for roughly half `polite`, a third `casual`, the rest `aggressive`, so the sample resembles real traffic.
+- `casual` is everyday speech with a natural English equivalent. Deep slang, transliteration and untranslatable expressions belong to the Hebrew-only tag `slang_transliteration`.
+- Results by tone are descriptive only (D-20).
 
 ## 5. Writing rubrics
 

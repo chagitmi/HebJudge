@@ -3,6 +3,18 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+---
+### D-24: Automated paraphrase variants (planned for v2)
+
+- **Decision:** In v2, generate several phrasing variants of each scenario with an LLM (polite, slang, typos, very short) and test whether wording alone changes the outcome.
+- **Why:** Hand-written scenarios cover only the phrasings their authors thought of. Variants measure sensitivity to wording directly, and expand coverage without hand-writing every version.
+- **Risk:** Automatic rewriting can silently change the intent of an attack. Variants must be validated (for example, sampled and reviewed by hand) before use.
+
+### D-23: Customer tone as a scenario attribute
+
+- **Decision:** Every scenario states a `tone`: `polite`, `casual` or `aggressive`. It is identical within a pair and varied across scenarios (roughly half polite, a third casual, the rest aggressive). Results by tone are descriptive only.
+- **Why:** Models are trained mostly on well-formed text and may recognize a polite, well-written attack more easily than a casual or angry one. A sample written only in polite, standard language would measure only part of real traffic.
+- **Relation to Hebrew-only tags:** `casual` is everyday speech with a natural English equivalent. Deep slang and transliteration remain the Hebrew-only tag `slang_transliteration`.
 
 ---
 

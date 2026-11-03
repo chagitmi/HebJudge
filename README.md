@@ -155,7 +155,7 @@ All attacks in this project run against the project's own mock agent, never agai
 - [ ] Human labeling and judge calibration (agreement, Cohen's kappa)
 - [ ] Statistics (confidence intervals, McNemar test) and full report
 - [ ] Dataset release on Hugging Face
-- [ ] v2: friendly UI, multi-turn scenarios, hardened-agent comparison, additional provider
+- [ ] v2: friendly UI, multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, additional provider
 
 ## Documentation
 
