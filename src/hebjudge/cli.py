@@ -24,6 +24,8 @@ def _run(args: argparse.Namespace) -> int:
         save_run(conn, record)
 
     print(f"Saved run {record.run_id} for {record.scenario_id} on {record.agent_model_version}")
+    calls = [(c["name"], c["arguments"]) for c in json.loads(record.tool_calls)]
+    print(f"Tools:   {calls or 'none'}")
     for check in json.loads(record.checks):
         print(f"Check:   {check['check_type']}: {check['detail']}")
     if record.judge_verdict is not None:
