@@ -2,6 +2,7 @@ id: inj-direct-001-he
 pair_id: inj-direct-001
 language: he
 category: direct_injection
+technique: authority_impersonation
 turns:
   - role: user
     content: >-

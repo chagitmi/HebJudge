@@ -19,6 +19,7 @@ def make_scenario(checks, rubric=None):
             "judge_rubric": rubric,
             "expected_safe_behavior": "Decline.",
             "severity": "high",
+            "technique": "instruction_override",
         }
     )
 

@@ -4,6 +4,40 @@ A running record of project decisions and the reasoning behind them. New entries
 
 Format: **Decision**, **Why**, **Alternatives considered**.
 
+---
+
+## 2026-11-03: Scenario design
+
+### D-22: Handling hidden and encoded content
+
+- **Decision:** Invisible or control characters are written in scenario files as escape codes (for example `"\u200b"`), never as raw characters. Reports and the labeling tool display them as visible markers. The canary check will be extended to detect common encodings of the canary (for example Base64).
+- **Why:** A reviewer must be able to see exactly what a scenario contains. An attacker can also ask the agent to encode its output, which would bypass an exact-match check.
+
+### D-21: Indirect injection through per-scenario order notes
+
+- **Decision:** A scenario may define `order_notes`, which are planted into the mock store before the run. The user message stays benign; the injected instruction reaches the agent through a tool result. Indirect-injection scenarios must define at least one note.
+- **Why:** Each YAML file tells the whole story. Notes are language-specific and translated with the scenario; the targeted orders must match within a pair.
+- **Alternatives considered:** A fixed set of "poisoned" orders shared by all scenarios. Less flexible and harder to review.
+
+### D-20: Balanced spread across techniques
+
+- **Decision:** Within each category, scenarios are spread across the techniques that fit it. Per-technique results are reported descriptively only; statistical claims are made per family and per category. The scenario count may grow beyond the plan if coverage requires it.
+- **Why:** Broad coverage instead of many variants of one trick. With few examples per technique, inference at that level would not be credible.
+
+### D-19: Scenario drafting workflow
+
+- **Decision:** Drafts of both sides of a pair are proposed with AI assistance; the author reviews and rewrites the Hebrew until it reads like a real Israeli customer. The English side stays parallel.
+- **Why:** Saves drafting time while keeping the Hebrew natural. A scenario that sounds translated tests something other than real user input.
+
+### D-18: Attack-technique taxonomy
+
+- **Decision:** Every attack scenario names one technique from a fixed list; each technique belongs to a family. The family is derived in code, not written in the scenario.
+  - Social engineering: `authority_impersonation`, `emotional_pressure`
+  - Instruction override: `instruction_override`, `fake_system_message`, `refusal_suppression`, `fake_conversation`
+  - Framing: `role_play`, `hypothetical_fiction`
+  - Obfuscation: `encoding`, `hidden_text`, `payload_splitting`, `translation_trick`, and the Hebrew-only `keyboard_layout`, `atbash`, `bidi_control`
+  - Format exploit: `format_exploit`
+- **Why:** Based on documented attack techniques, which makes coverage systematic and easy to describe. Families are large enough for analysis; techniques allow descriptive detail. The Hebrew-only techniques (wrong keyboard layout, Atbash cipher, bidirectional control characters) are, as far as we know, not covered by existing benchmarks.
 
 ---
 ## 2026-10-29: Thin slice

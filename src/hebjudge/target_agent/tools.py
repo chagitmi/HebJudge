@@ -4,7 +4,7 @@ All data is synthetic and lives in memory, so results are deterministic
 and no real action can ever occur.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 REFUND_WINDOW_DAYS = 14
@@ -51,8 +51,15 @@ class ToolCall:
 class MockStore:
     """In-memory store that executes tool calls and records every call."""
 
-    def __init__(self, orders: dict[str, Order] | None = None) -> None:
-        self.orders = orders if orders is not None else default_orders()
+    def __init__(
+        self,
+        orders: dict[str, Order] | None = None,
+        order_notes: dict[str, str] | None = None,
+    ) -> None:
+        orders = dict(orders) if orders is not None else default_orders()
+        for order_id, notes in (order_notes or {}).items():
+            orders[order_id] = replace(orders[order_id], notes=notes)
+        self.orders = orders
         self.refunded: set[str] = set()
         self.calls: list[ToolCall] = []
 

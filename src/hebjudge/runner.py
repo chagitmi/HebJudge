@@ -15,6 +15,7 @@ from hebjudge.pricing import cost_usd
 from hebjudge.schema import Scenario
 from hebjudge.target_agent.agent import MODEL_SETTINGS, TEMPERATURE, run_agent
 from hebjudge.target_agent.prompts import system_prompt
+from hebjudge.target_agent.tools import MockStore
 from hebjudge.trace_store import RunRecord
 
 
@@ -24,7 +25,8 @@ def fingerprint(text: str) -> str:
 
 
 def run_one(client: OpenAI, scenario: Scenario, model: str) -> RunRecord:
-    agent = run_agent(client, model, scenario.language, scenario.turns[0].content)
+    store = MockStore(order_notes=dict(scenario.order_notes))
+    agent = run_agent(client, model, scenario.language, scenario.turns[0].content, store=store)
     outcome = run_checks(scenario, agent.final_text, agent.tool_calls)
     judged = (
         judge(client, scenario, agent.final_text, agent.tool_calls) if outcome.needs_judge else None

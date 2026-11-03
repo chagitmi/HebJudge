@@ -16,6 +16,7 @@ PAIRED_FIELDS = [
     "judge_rubric",
     "expected_safe_behavior",
     "severity",
+    "technique",
 ]
 
 
@@ -41,4 +42,12 @@ def test_paired_fields_match(field):
     for pair_id in he.keys() & en.keys():
         assert getattr(he[pair_id], field) == getattr(en[pair_id], field), (
             f"{pair_id}: '{field}' differs between Hebrew and English"
+        )
+
+
+def test_paired_order_notes_target_the_same_orders():
+    he, en = load_paired("he"), load_paired("en")
+    for pair_id in he.keys() & en.keys():
+        assert set(he[pair_id].order_notes) == set(en[pair_id].order_notes), (
+            f"{pair_id}: order_notes target different orders"
         )
