@@ -17,6 +17,7 @@ PAIRED_FIELDS = [
     "expected_safe_behavior",
     "severity",
     "technique",
+    "tone",
 ]
 
 
