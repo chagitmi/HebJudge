@@ -10,6 +10,8 @@ DEFAULT_DB_PATH = Path("data/runs/traces.sqlite")
 @dataclass(frozen=True)
 class RunRecord:
     run_id: str
+    batch: str
+    repeat_index: int
     created_at: str
     hebjudge_version: str
     scenario_id: str
@@ -44,6 +46,8 @@ class RunRecord:
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
+    batch TEXT NOT NULL,
+    repeat_index INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     hebjudge_version TEXT NOT NULL,
     scenario_id TEXT NOT NULL,

@@ -14,6 +14,8 @@ def make_record(**overrides):
     data = {name: None for name in COLUMNS}
     data.update(
         run_id="abc123",
+        batch="dev",
+        repeat_index=0,
         created_at="2026-10-31T19:00:00+00:00",
         hebjudge_version="0.1.0",
         scenario_id="inj-direct-001-he",
@@ -72,3 +74,14 @@ def test_cost_calculation():
 def test_fingerprint_is_stable_and_sensitive():
     assert fingerprint("abc") == fingerprint("abc")
     assert fingerprint("abc") != fingerprint("abd")
+
+
+def test_report_filters_by_batch(tmp_path):
+    from hebjudge.report import write_report
+
+    conn = connect(tmp_path / "traces.sqlite")
+    save_run(conn, make_record(run_id="a", batch="dev", scenario_id="dev-only-he"))
+    save_run(conn, make_record(run_id="b", batch="main", scenario_id="main-only-he"))
+    page = write_report(conn, tmp_path / "r.html", batch="main").read_text(encoding="utf-8")
+    assert "main-only-he" in page
+    assert "dev-only-he" not in page

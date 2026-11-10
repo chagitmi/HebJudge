@@ -1,9 +1,11 @@
-"""Runner: executes one scenario on one model end to end and builds its trace record."""
+"""Runner: executes scenarios on models end to end and stores their trace records."""
 
 import hashlib
 import json
+import sqlite3
 import uuid
-from dataclasses import asdict
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
 from openai import OpenAI
@@ -16,7 +18,7 @@ from hebjudge.schema import Scenario
 from hebjudge.target_agent.agent import MODEL_SETTINGS, TEMPERATURE, run_agent
 from hebjudge.target_agent.prompts import system_prompt
 from hebjudge.target_agent.tools import MockStore
-from hebjudge.trace_store import RunRecord
+from hebjudge.trace_store import RunRecord, save_run
 
 
 def fingerprint(text: str) -> str:
@@ -24,7 +26,13 @@ def fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def run_one(client: OpenAI, scenario: Scenario, model: str) -> RunRecord:
+def run_one(
+    client: OpenAI,
+    scenario: Scenario,
+    model: str,
+    batch: str = "dev",
+    repeat_index: int = 0,
+) -> RunRecord:
     store = MockStore(order_notes=dict(scenario.order_notes))
     agent = run_agent(client, model, scenario.language, scenario.turns[0].content, store=store)
     outcome = run_checks(scenario, agent.final_text, agent.tool_calls)
@@ -38,6 +46,8 @@ def run_one(client: OpenAI, scenario: Scenario, model: str) -> RunRecord:
 
     return RunRecord(
         run_id=uuid.uuid4().hex,
+        batch=batch,
+        repeat_index=repeat_index,
         created_at=datetime.now(UTC).isoformat(timespec="seconds"),
         hebjudge_version=__version__,
         scenario_id=scenario.id,
@@ -68,3 +78,44 @@ def run_one(client: OpenAI, scenario: Scenario, model: str) -> RunRecord:
         judge_output_tokens=judged.output_tokens if judged else None,
         cost_usd=round(total_cost, 6),
     )
+
+
+@dataclass
+class BatchSummary:
+    completed: int = 0
+    failed: int = 0
+    cost_usd: float = 0.0
+
+
+def run_batch(
+    client: OpenAI | None,
+    scenarios: Sequence[Scenario],
+    models: Sequence[str],
+    repeats: int,
+    batch: str,
+    conn: sqlite3.Connection,
+    run_fn: Callable[..., RunRecord] = run_one,
+    on_result: Callable[[int, int, RunRecord], None] | None = None,
+    on_error: Callable[[int, int, Scenario, str, Exception], None] | None = None,
+) -> BatchSummary:
+    """Run every scenario on every model, `repeats` times, saving each record as it completes."""
+    unknown = [m for m in models if m not in MODEL_SETTINGS]
+    if unknown:
+        raise ValueError(f"no settings defined for models: {unknown}")
+
+    jobs = [(s, m, r) for s in scenarios for m in models for r in range(repeats)]
+    summary = BatchSummary()
+    for index, (scenario, model, repeat_index) in enumerate(jobs, start=1):
+        try:
+            record = run_fn(client, scenario, model, batch=batch, repeat_index=repeat_index)
+        except Exception as exc:  # one failed run must not stop the batch
+            summary.failed += 1
+            if on_error:
+                on_error(index, len(jobs), scenario, model, exc)
+            continue
+        save_run(conn, record)
+        summary.completed += 1
+        summary.cost_usd += record.cost_usd
+        if on_result:
+            on_result(index, len(jobs), record)
+    return summary

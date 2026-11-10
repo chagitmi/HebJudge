@@ -106,8 +106,13 @@ def render_html(rows: Sequence[Row]) -> str:
 """
 
 
-def write_report(conn: sqlite3.Connection, out_path: str | Path) -> Path:
-    rows = conn.execute("SELECT * FROM runs ORDER BY created_at").fetchall()
+def write_report(conn: sqlite3.Connection, out_path: str | Path, batch: str | None = None) -> Path:
+    if batch is None:
+        rows = conn.execute("SELECT * FROM runs ORDER BY created_at").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM runs WHERE batch = ? ORDER BY created_at", (batch,)
+        ).fetchall()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(render_html(rows), encoding="utf-8")

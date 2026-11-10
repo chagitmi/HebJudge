@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, computed_field, model_validator
 
 from hebjudge.target_agent.tools import default_orders
 
@@ -139,7 +139,30 @@ class Scenario(StrictModel):
 
 
 def load_scenario(path: str | Path) -> Scenario:
-    """Load one scenario from a YAML file and validate it."""
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    return Scenario.model_validate(data)
+    """Load one scenario from a YAML file and validate it. Errors name the file."""
+    path = Path(path)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return Scenario.model_validate(data)
+    except (yaml.YAMLError, ValidationError) as exc:
+        raise ValueError(f"{path}: {exc}") from exc
+
+
+def load_scenarios(paths: list[str | Path]) -> list[Scenario]:
+    """Load scenarios from files and directories (searched recursively), in a stable order."""
+    files: list[Path] = []
+    for path in map(Path, paths):
+        if path.is_dir():
+            files.extend(sorted(path.rglob("*.yaml")))
+        elif path.is_file():
+            files.append(path)
+        else:
+            raise FileNotFoundError(f"no such file or directory: {path}")
+
+    scenarios = [load_scenario(f) for f in files]
+    ids = [s.id for s in scenarios]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        raise ValueError(f"duplicate scenario ids: {duplicates}")
+    return scenarios
