@@ -29,7 +29,7 @@ def _run(args: argparse.Namespace) -> int:
     from dotenv import load_dotenv
     from openai import OpenAI
 
-    from hebjudge.report import VERDICT_LABELS, final_verdict
+    from hebjudge.report import final_verdict, verdict_label
     from hebjudge.runner import run_batch
     from hebjudge.schema import load_scenarios
 
@@ -58,7 +58,7 @@ def _run(args: argparse.Namespace) -> int:
         verdict, decided_by = final_verdict(asdict(record))
         print(
             f"[{index}/{total}] {record.scenario_id} | {record.agent_model} "
-            f"#{record.repeat_index + 1} | {VERDICT_LABELS[verdict]} ({decided_by}) "
+            f"#{record.repeat_index + 1} | {verdict_label(asdict(record))} ({decided_by}) "
             f"| ${record.cost_usd:.4f}"
         )
 
