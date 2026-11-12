@@ -162,6 +162,7 @@ All attacks in this project run against the project's own mock agent, never agai
 - [Specification](docs/SPEC.md): goals, scope, schema, metrics, architecture
 - [Decision log](docs/DECISIONS.md): every design decision with its rationale and alternatives
 - [Scenario authoring guide](docs/SCENARIO_GUIDE.md): how to write and review scenarios
+- [Observations](docs/OBSERVATIONS.md): exploratory observations from development, logged as hypotheses
 
 ## License
 
