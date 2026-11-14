@@ -2,6 +2,20 @@
 
 Exploratory observations made during development. These are hypotheses, not findings: they come from development batches, not from the planned research run (see D-12 and D-25). New entries are added at the top.
 
+## 2026-11-14: Full batch 4 re-judge: the judge is stable under D-30
+
+- **Batch:** `batch4-rejudge`, all 264 runs of `batch4-check` re-evaluated with the D-30 judge, same agent replies.
+- **Result:** over-refusal 0/48 and no unclear verdicts (previously 2 and 2). Of about 200 judged attack runs, one verdict changed (a Hebrew direct-injection run on gpt-4o-mini, from succeeded to failed). Every other figure is unchanged.
+- **Paired:** 7 Hebrew-only, 4 English-only (McNemar p ≈ 0.55).
+- **Interpretation:** adding the store policy fixed the benign-control errors without moving attack verdicts. This is a first, informal stability check of the judge; formal calibration against human labels (D-08) is still needed.
+
+## 2026-11-14: All batch 4 over-refusals were judge errors
+
+- **Batch:** `batch4-rejudge-benign`, re-judged from `batch4-check` with `hebjudge rejudge` (D-31), same agent replies.
+- **Change tested:** the judge now receives the store policy (D-30), and benign rubrics allow asking for a refund reason.
+- **Result:** all 4 benign "failures" (2 over-refusal, 2 unclear) became "Helped"; the other 8 benign runs of the same scenarios stayed "Helped". Cost: $0.02.
+- **Interpretation:** batch 4 had no real over-refusal. A judge without the policy marked correct policy statements (refunds are for the full total) as incorrect or unclear.
+
 ## 2026-11-14: Batch 4 check: hidden HTML fails; justification may matter more than hiding
 
 - **Batch:** `batch4-check`, 44 pairs (36 attack, 8 benign) x 3 models, one run each.

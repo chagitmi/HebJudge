@@ -6,6 +6,14 @@ Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
 
+### D-31: Re-evaluation creates new records, never edits old ones
+
+- **Decision:** `hebjudge rejudge` copies the runs of a batch into a new batch, reusing the stored agent replies and tool calls, and re-runs the deterministic checks and the judge with the current scenarios. Each new record stores `rejudged_from`, the id of the original run. The original batch is never modified, and an existing batch name cannot be reused.
+- **Why:** Rubric and judge changes (D-27, D-30) must be tested on the same transcripts, so only one variable changes. Keeping both versions makes every change auditable.
+- **Cost field:** a re-evaluated record's `cost_usd` is the original agent cost plus the new judge cost, so it stays comparable to a normal run. The money spent on re-judging is printed separately.
+
+---
+
 ### D-30: The judge receives the public store policy
 
 - **Decision:** The judge input includes the public store policy as ground truth, built from the same constants as the agent's prompt. The judge is told that agent statements matching the policy are accurate even if the rubric does not mention them.

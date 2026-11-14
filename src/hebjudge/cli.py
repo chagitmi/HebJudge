@@ -1,4 +1,4 @@
-"""Command-line interface: hebjudge run / report."""
+"""Command-line interface: hebjudge run / rejudge / report."""
 
 import argparse
 import json
@@ -55,7 +55,7 @@ def _run(args: argparse.Namespace) -> int:
         if total == 1:
             _print_details(record)
             return
-        verdict, decided_by = final_verdict(asdict(record))
+        _, decided_by = final_verdict(asdict(record))
         print(
             f"[{index}/{total}] {record.scenario_id} | {record.agent_model} "
             f"#{record.repeat_index + 1} | {verdict_label(asdict(record))} ({decided_by}) "
@@ -89,6 +89,58 @@ def _run(args: argparse.Namespace) -> int:
     return 0 if summary.failed == 0 else 1
 
 
+def _rejudge(args: argparse.Namespace) -> int:
+    from dotenv import load_dotenv
+    from openai import OpenAI
+
+    from hebjudge.rejudge import rejudge_batch
+    from hebjudge.report import verdict_label
+    from hebjudge.schema import load_scenarios
+
+    if not Path(args.db).exists():
+        print(f"No trace database at {args.db}. Run a scenario first.")
+        return 1
+    try:
+        scenarios = {s.id: s for s in load_scenarios(args.scenarios)}
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    def on_result(old: RunRecord, new: RunRecord) -> None:
+        before, after = verdict_label(asdict(old)), verdict_label(asdict(new))
+        if before != after:
+            print(f"CHANGED  {new.scenario_id} | {new.agent_model} | {before} -> {after}")
+            if new.judge_rationale:
+                print(f"         {new.judge_rationale}")
+
+    def on_error(old: RunRecord, exc: Exception) -> None:
+        print(f"ERROR    {old.scenario_id} | {old.agent_model} | {exc}")
+
+    load_dotenv()
+    try:
+        with connect(args.db) as conn:
+            summary = rejudge_batch(
+                OpenAI(),
+                conn,
+                args.batch,
+                args.new_batch,
+                scenarios,
+                only=set(args.only) if args.only else None,
+                on_result=on_result,
+                on_error=on_error,
+            )
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    print(
+        f"Done: {summary.judged} re-judged, {summary.decided_in_code} decided in code, "
+        f"{summary.skipped} skipped (scenario not found), {summary.failed} failed. "
+        f"{summary.changed} verdicts changed. Judge cost ${summary.judge_cost_usd:.4f}"
+    )
+    return 0 if summary.failed == 0 else 1
+
+
 def _report(args: argparse.Namespace) -> int:
     from hebjudge.report import write_report
 
@@ -117,6 +169,15 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--batch", default="dev", help="Label stored with every run (D-26)")
     run_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
+    rejudge_parser = sub.add_parser(
+        "rejudge", help="Re-evaluate stored runs with current scenarios and judge (no agent calls)"
+    )
+    rejudge_parser.add_argument("--batch", required=True, help="Batch to re-evaluate")
+    rejudge_parser.add_argument("--new-batch", required=True, help="Label for the new records")
+    rejudge_parser.add_argument("--scenarios", nargs="+", default=["data/scenarios"])
+    rejudge_parser.add_argument("--only", nargs="+", help="Only these scenario ids")
+    rejudge_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+
     report_parser = sub.add_parser("report", help="Build an HTML report from saved traces")
     report_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
     report_parser.add_argument("--out", default=str(DEFAULT_REPORT_PATH))
@@ -125,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
+    if args.command == "rejudge":
+        return _rejudge(args)
     if args.command == "report":
         return _report(args)
     parser.print_help()
