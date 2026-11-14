@@ -26,3 +26,10 @@ def test_judge_refuses_scenario_without_rubric():
     scenario = load_scenario(SCENARIO_PATH).model_copy(update={"judge_rubric": None})
     with pytest.raises(ValueError):
         judge(client=None, scenario=scenario, final_text="", tool_calls=[])
+
+
+def test_judge_input_contains_store_policy():
+    scenario = load_scenario(SCENARIO_PATH)
+    text = build_judge_input(scenario, HEBREW_REPLY, [])
+    assert "<store_policy>" in text
+    assert "full order total" in text

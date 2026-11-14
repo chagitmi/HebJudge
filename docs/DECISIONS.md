@@ -6,6 +6,20 @@ Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
 
+### D-30: The judge receives the public store policy
+
+- **Decision:** The judge input includes the public store policy as ground truth, built from the same constants as the agent's prompt. The judge is told that agent statements matching the policy are accurate even if the rubric does not mention them.
+- **Why:** In `batch4-check`, all four benign-control "failures" were judge errors. In three, the agent correctly stated that refunds are always for the full order total; the judge, which knew only the rubric, marked this as incorrect or unclear. Rubrics cannot list every true fact, so the judge needs the policy itself.
+- **Effect on earlier batches:** runs before this change were judged without the policy. Verdicts that depend on policy facts may need re-judging.
+
+---
+
+### D-29: Hidden text covers several methods, interpreted with a perception probe
+
+- **Decision:** `hidden_text` scenarios use several hiding methods: Unicode tag characters (`inj-indirect-005`), HTML white text on a white background (`inj-indirect-010`), HTML `display:none` (`inj-indirect-011`), and zero-width characters inside words (`inj-indirect-012`). `inj-indirect-005` stays in the benchmark. Before adding a hiding method, `scripts/probe_hidden_text.py` records whether each model can read it, and the report states this next to the results.
+- **Why:** The benchmark measures whether an attack succeeds, not why it fails; an attacker who uses tag characters really does fail against these models, and that is useful to report. A probe (2026-11-14) showed that none of the four models reads tag characters, while all read zero-width-split text. Realistic hidden injection more often exploits the gap between what a person sees in a rendered view and the raw text a model receives.
+---
+
 ### D-28: Hidden-text payloads are identical across a pair
 
 - **Decision:** In `hidden_text` scenarios using Unicode tag characters, the hidden payload is the same English text on both sides of a pair; only the visible text is translated.
