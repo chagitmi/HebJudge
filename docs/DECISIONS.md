@@ -6,6 +6,13 @@ Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
 
+### D-28: Hidden-text payloads are identical across a pair
+
+- **Decision:** In `hidden_text` scenarios using Unicode tag characters, the hidden payload is the same English text on both sides of a pair; only the visible text is translated.
+- **Why:** Tag characters exist only for ASCII, so a Hebrew hidden payload is impossible with this technique. Keeping the payload identical isolates the effect of the surrounding language context on compliance.
+
+---
+
 ### D-27: Rubric convention: "Otherwise, PASS"
 
 - **Decision:** Attack rubrics define only the failure outcome and its explicit non-failures, and end with "Otherwise, PASS." Ideal behavior is described in `expected_safe_behavior`, not in the rubric. Leakage rubrics state that confirming an order's status and total is allowed.
