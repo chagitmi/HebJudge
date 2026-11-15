@@ -1,4 +1,4 @@
-"""Command-line interface: hebjudge run / rejudge / report."""
+"""Command-line interface: hebjudge run / rejudge / calibrate / report."""
 
 import argparse
 import json
@@ -146,6 +146,99 @@ def _rejudge(args: argparse.Namespace) -> int:
     return 0 if summary.failed == 0 else 1
 
 
+DEFAULT_LABELS_DIR = Path("data/labels")
+DEFAULT_LABELING_DIR = Path("data/runs/calibration")
+
+
+def _calibrate_sample(args: argparse.Namespace) -> int:
+    from hebjudge.calibration import labeling_items, render_labeling_html, select_sample
+    from hebjudge.schema import load_scenarios
+
+    if not Path(args.db).exists():
+        print(f"No trace database at {args.db}.")
+        return 1
+    sample_path = DEFAULT_LABELS_DIR / f"sample-{args.batch}.json"
+    if sample_path.exists() and not args.force:
+        print(f"{sample_path} already exists. The sample must not change once labeling has begun.")
+        print("Use --force only if you have not started labeling.")
+        return 1
+
+    scenarios = {s.id: s for s in load_scenarios(args.scenarios)}
+    with connect(args.db) as conn:
+        rows = conn.execute("SELECT * FROM runs WHERE batch = ?", (args.batch,)).fetchall()
+    rows = [r for r in rows if r["scenario_id"] in scenarios]
+    if not rows:
+        print(f"No runs found in batch '{args.batch}'.")
+        return 1
+
+    sample = select_sample(rows, per_language=args.per_language, seed=args.seed)
+    rows_by_id = {r["run_id"]: r for r in rows}
+    sample_id = f"{args.batch}-seed{args.seed}"
+
+    DEFAULT_LABELS_DIR.mkdir(parents=True, exist_ok=True)
+    sample_path.write_text(
+        json.dumps(
+            {"sample_id": sample_id, "batch": args.batch, "seed": args.seed, "items": sample},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    DEFAULT_LABELING_DIR.mkdir(parents=True, exist_ok=True)
+    page_path = DEFAULT_LABELING_DIR / f"label-{args.batch}.html"
+    items = labeling_items(sample, rows_by_id, scenarios)
+    page_path.write_text(render_labeling_html(items, sample_id), encoding="utf-8")
+
+    by_stratum: dict[tuple, int] = {}
+    for entry in sample:
+        r = rows_by_id[entry["run_id"]]
+        key = (r["language"], r["judge_verdict"])
+        by_stratum[key] = by_stratum.get(key, 0) + 1
+    print(f"Sample of {len(sample)} judged runs written to {sample_path}")
+    for (language, verdict), count in sorted(by_stratum.items()):
+        print(f"  {language}, judge {verdict}: {count}")
+    print(f"Labeling page written to {page_path}")
+    return 0
+
+
+def _calibrate_score(args: argparse.Namespace) -> int:
+    from hebjudge.calibration import score
+
+    sample_path = Path(args.sample or DEFAULT_LABELS_DIR / f"sample-{args.batch}.json")
+    for path in (Path(args.db), sample_path, Path(args.labels)):
+        if not path.exists():
+            print(f"Not found: {path}")
+            return 1
+    sample_file = json.loads(sample_path.read_text(encoding="utf-8"))
+    labels_file = json.loads(Path(args.labels).read_text(encoding="utf-8"))
+    if labels_file.get("sample_id") != sample_file["sample_id"]:
+        print("These labels belong to a different sample.")
+        return 1
+
+    with connect(args.db) as conn:
+        rows = conn.execute("SELECT * FROM runs WHERE batch = ?", (args.batch,)).fetchall()
+    result = score(labels_file["labels"], sample_file["items"], {r["run_id"]: r for r in rows})
+
+    print(f"Unlabeled: {result['unlabeled']}, unsure (excluded): {result['unsure']}")
+    print(f"{'Group':18} {'n':>4} {'Agreement':>10} {'Kappa':>7}")
+    for name, g in result["groups"].items():
+        agreement = "n/a" if g["agreement"] is None else f"{g['agreement']:.0%}"
+        kappa = "n/a" if g["kappa"] is None else f"{g['kappa']:.2f}"
+        print(f"{name:18} {g['n']:>4} {agreement:>10} {kappa:>7}")
+    c = result["confusion"]
+    print("Confusion (rows: human, columns: judge)")
+    print(f"  human pass: judge pass {c[('pass', 'pass')]}, judge fail {c[('pass', 'fail')]}")
+    print(f"  human fail: judge pass {c[('fail', 'pass')]}, judge fail {c[('fail', 'fail')]}")
+    if result["disagreements"]:
+        print("Disagreements:")
+        for d in result["disagreements"]:
+            print(
+                f"  {d['scenario_id']} [{d['split']}] human={d['human']} judge={d['judge']}"
+                f" | run {d['run_id']}"
+            )
+            print(f"     judge: {d['rationale']}")
+    return 0
+
+
 def _report(args: argparse.Namespace) -> int:
     from hebjudge.report import write_report
 
@@ -187,6 +280,25 @@ def main(argv: list[str] | None = None) -> int:
     rejudge_parser.add_argument("--only", nargs="+", help="Only these scenario ids")
     rejudge_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
+    calibrate = sub.add_parser("calibrate", help="Judge calibration against human labels (D-08)")
+    calibrate_sub = calibrate.add_subparsers(dest="calibrate_command")
+    sample_parser = calibrate_sub.add_parser(
+        "sample", help="Pick a sample and build a labeling page"
+    )
+    sample_parser.add_argument("--batch", required=True)
+    sample_parser.add_argument("--per-language", type=int, default=40)
+    sample_parser.add_argument("--seed", type=int, default=20261115)
+    sample_parser.add_argument("--scenarios", nargs="+", default=["data/scenarios"])
+    sample_parser.add_argument("--force", action="store_true")
+    sample_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+    score_parser = calibrate_sub.add_parser("score", help="Agreement and kappa vs. the judge")
+    score_parser.add_argument("--batch", required=True)
+    score_parser.add_argument("--labels", required=True, help="Labels JSON from the labeling page")
+    score_parser.add_argument(
+        "--sample", help="Sample file (default: data/labels/sample-BATCH.json)"
+    )
+    score_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+
     report_parser = sub.add_parser("report", help="Build an HTML report from saved traces")
     report_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
     report_parser.add_argument("--out", default=str(DEFAULT_REPORT_PATH))
@@ -199,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
         return _rejudge(args)
     if args.command == "report":
         return _report(args)
+    if args.command == "calibrate" and args.calibrate_command == "sample":
+        return _calibrate_sample(args)
+    if args.command == "calibrate" and args.calibrate_command == "score":
+        return _calibrate_score(args)
     parser.print_help()
     return 0
 

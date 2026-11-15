@@ -4,6 +4,12 @@ A running record of project decisions and the reasoning behind them. New entries
 
 Format: **Decision**, **Why**, **Alternatives considered**.
 
+### D-35: Calibration sample design
+
+- **Decision:** The calibration sample has 80 judged runs from `main-v1`: 40 per language, and within each language 20 the judge marked fail and 20 it marked pass, spread over categories, one repeat per scenario and model. Each stratum is split alternately into a tune half and a held-out test half (D-08). The sample is reproducible from the batch and a fixed seed, and cannot be regenerated once labeling has begun. Labeling is blind: the page shows neither the judge's verdict and rationale nor the model.
+- **Why:** Only about a fifth of judged runs are failures; a random sample would contain too few to measure whether the judge recognizes them. Code-decided runs are exact by construction and are excluded. Blind labeling prevents the judge from influencing the human labels.
+- **Note:** Because the sample is balanced, agreement and kappa describe the judge on a 50/50 mix, not on the natural mix of the run. This is stated with the results.
+
 ---
 
 ### D-34: Scope of v2: real agents and a user interface
