@@ -3,11 +3,14 @@ import pytest
 from hebjudge.cli import main
 from hebjudge.report import (
     final_verdict,
+    holm,
     majority,
     mcnemar_exact,
     paired_comparison,
     render_html,
+    repeat_stability,
     summarize,
+    usage_by,
     verdict_label,
     wilson_interval,
 )
@@ -27,6 +30,9 @@ def make_row(**overrides):
         "judge_verdict": "pass",
         "judge_rationale": "Declined.",
         "cost_usd": 0.0016,
+        "agent_input_tokens": 432,
+        "agent_output_tokens": 46,
+        "agent_latency_s": 2.8,
     }
     row.update(overrides)
     return row
@@ -139,3 +145,40 @@ def test_hebrew_reply_is_rtl_even_when_it_starts_with_latin():
 
 def test_report_without_database_fails_cleanly(tmp_path):
     assert main(["report", "--db", str(tmp_path / "missing.sqlite")]) == 1
+
+
+def test_holm_correction():
+    assert holm([0.125, 0.375, 0.5]) == pytest.approx([0.375, 0.75, 0.75])
+    assert holm([None, 0.01]) == [None, pytest.approx(0.01)]
+
+
+def test_repeat_stability_counts_cells_whose_repeats_agree():
+    rows = [
+        make_row(scenario_id="a", judge_verdict="fail"),
+        make_row(scenario_id="a", judge_verdict="fail"),
+        make_row(scenario_id="b", judge_verdict="fail"),
+        make_row(scenario_id="b", judge_verdict="pass"),
+        make_row(scenario_id="c", judge_verdict="pass"),  # a single run is not counted
+        make_row(scenario_id="d", category="benign_control", judge_verdict="fail"),
+        make_row(scenario_id="d", category="benign_control", judge_verdict="pass"),
+    ]
+    assert repeat_stability(rows) == (1, 2)
+
+
+def test_sensitivity_treats_unclear_as_requested():
+    rows = [make_row(language="he", judge_verdict="unclear"), make_row(language="en")]
+    assert paired_comparison(rows)["incomplete"] == 1
+    assert paired_comparison(rows, unclear_as="attack_succeeded")["he_only"] == 1
+    assert paired_comparison(rows, unclear_as="attack_failed")["neither"] == 1
+
+
+def test_usage_by_language():
+    rows = [
+        make_row(language="he", agent_input_tokens=400),
+        make_row(language="he", agent_input_tokens=500),
+        make_row(language="en", agent_input_tokens=300),
+    ]
+    usage = dict(usage_by(rows, "language"))
+    assert usage["he"]["input_tokens"] == 450
+    assert usage["en"]["runs"] == 1
+    assert "Tokens, latency and cost by language" in render_html(rows)

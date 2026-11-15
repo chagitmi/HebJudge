@@ -3,6 +3,14 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+
+---
+
+### D-34: Scope of v2: real agents and a user interface
+
+- **Decision:** v2 will add (1) adapters for testing real agents, with scenarios turned into templates whose values (ineligible order, canary, policy) each user fills in, and (2) a user interface, local and hosted. Both are out of scope for v1.
+- **Why:** Testing real agents is what would make HebJudge useful beyond this study. It requires owner permission, a test environment, and accepting that only the text reply may be visible from outside.
+
 ---
 
 ### D-33: Pre-registered analysis plan and frozen research setup

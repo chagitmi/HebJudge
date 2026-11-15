@@ -93,9 +93,16 @@ def breakdown(rows: Sequence[Row], key: str, benign: bool = False) -> list[tuple
     return [(value, rate_stats(group)) for value, group in sorted(groups.items())]
 
 
-def majority(rows: Sequence[Row]) -> bool | None:
-    """Majority outcome over decided repeats (D-25). None if nothing decided or a tie."""
-    decided = [v for v in (final_verdict(r)[0] for r in rows) if v != "unclear"]
+def majority(rows: Sequence[Row], unclear_as: str | None = None) -> bool | None:
+    """Majority outcome over decided repeats (D-25). None if nothing decided or a tie.
+
+    `unclear_as` ("attack_succeeded" or "attack_failed") counts unclear runs that way, for the
+    sensitivity analysis in ANALYSIS_PLAN.md section 6.
+    """
+    verdicts = [final_verdict(r)[0] for r in rows]
+    if unclear_as is not None:
+        verdicts = [unclear_as if v == "unclear" else v for v in verdicts]
+    decided = [v for v in verdicts if v != "unclear"]
     failures = sum(v == "attack_succeeded" for v in decided)
     if not decided or 2 * failures == len(decided):
         return None
@@ -111,7 +118,7 @@ def mcnemar_exact(b: int, c: int) -> float | None:
     return min(1.0, 2 * tail / 2**n)
 
 
-def paired_comparison(rows: Sequence[Row]) -> dict[str, Any]:
+def paired_comparison(rows: Sequence[Row], unclear_as: str | None = None) -> dict[str, Any]:
     """Compare each attack pair on each model across languages (SPEC 7.2)."""
     cells: dict[tuple, dict[str, list[Row]]] = defaultdict(lambda: {"he": [], "en": []})
     for r in rows:
@@ -121,7 +128,7 @@ def paired_comparison(rows: Sequence[Row]) -> dict[str, Any]:
 
     counts = {"both": 0, "neither": 0, "he_only": 0, "en_only": 0, "incomplete": 0}
     for cell in cells.values():
-        he, en = majority(cell["he"]), majority(cell["en"])
+        he, en = majority(cell["he"], unclear_as), majority(cell["en"], unclear_as)
         if he is None or en is None:
             counts["incomplete"] += 1
         elif he and en:
@@ -134,6 +141,50 @@ def paired_comparison(rows: Sequence[Row]) -> dict[str, Any]:
             counts["neither"] += 1
     counts["mcnemar_p"] = mcnemar_exact(counts["he_only"], counts["en_only"])
     return counts
+
+
+def holm(pvalues: Sequence[float | None]) -> list[float | None]:
+    """Holm-adjusted p-values for several tests (None entries are left out)."""
+    present = sorted((p, i) for i, p in enumerate(pvalues) if p is not None)
+    adjusted: list[float | None] = [None] * len(pvalues)
+    running = 0.0
+    for rank, (p, i) in enumerate(present):
+        running = max(running, min(1.0, (len(present) - rank) * p))
+        adjusted[i] = running
+    return adjusted
+
+
+def repeat_stability(rows: Sequence[Row]) -> tuple[int, int]:
+    """(cells whose repeats all agree, cells with more than one repeat), over attack rows."""
+    cells: dict[tuple, list[str]] = defaultdict(list)
+    for r in rows:
+        if not is_benign(r):
+            cells[(r["scenario_id"], r["agent_model"])].append(final_verdict(r)[0])
+    repeated = [v for v in cells.values() if len(v) > 1]
+    return sum(len(set(v)) == 1 for v in repeated), len(repeated)
+
+
+def usage_by(rows: Sequence[Row], key: str) -> list[tuple[str, dict[str, float]]]:
+    """Mean agent tokens, latency and total cost per run, grouped by `key`."""
+    groups: dict[str, list[Row]] = defaultdict(list)
+    for r in rows:
+        groups[str(r[key])].append(r)
+    out = []
+    for value, group in sorted(groups.items()):
+        n = len(group)
+        out.append(
+            (
+                value,
+                {
+                    "runs": n,
+                    "input_tokens": sum(r["agent_input_tokens"] for r in group) / n,
+                    "output_tokens": sum(r["agent_output_tokens"] for r in group) / n,
+                    "latency_s": sum(r["agent_latency_s"] for r in group) / n,
+                    "cost_usd": sum(r["cost_usd"] for r in group) / n,
+                },
+            )
+        )
+    return out
 
 
 def _e(value: Any) -> str:
@@ -166,23 +217,63 @@ def _breakdown_table(title: str, first_col: str, items: list[tuple[str, dict]]) 
 
 def _paired_table(rows: Sequence[Row]) -> str:
     models = sorted({r["agent_model"] for r in rows if not is_benign(r)})
-    lines = [("All models", paired_comparison(rows))]
-    lines += [(m, paired_comparison([r for r in rows if r["agent_model"] == m])) for m in models]
+    per_model = [(m, paired_comparison([r for r in rows if r["agent_model"] == m])) for m in models]
+    adjusted = holm([c["mcnemar_p"] for _, c in per_model])
+    lines = [("All models", paired_comparison(rows), None)]
+    lines += [(m, c, adj) for (m, c), adj in zip(per_model, adjusted, strict=True)]
+
+    def fmt(p: float | None) -> str:
+        return "n/a" if p is None else f"{p:.3f}"
+
     body = ""
-    for name, c in lines:
-        p = "n/a" if c["mcnemar_p"] is None else f"{c['mcnemar_p']:.3f}"
+    for name, c, adj in lines:
         body += (
             f"<tr><td>{_e(name)}</td><td>{c['he_only']}</td><td>{c['en_only']}</td>"
             f"<td>{c['both']}</td><td>{c['neither']}</td><td>{c['incomplete']}</td>"
-            f"<td>{p}</td></tr>"
+            f"<td>{fmt(c['mcnemar_p'])}</td><td>{'' if name == 'All models' else fmt(adj)}</td></tr>"
         )
+    as_success = paired_comparison(rows, unclear_as="attack_succeeded")
+    as_failure = paired_comparison(rows, unclear_as="attack_failed")
     return (
         "<h3>Paired comparison (each attack pair on each model)</h3>"
         "<table class='small'><thead><tr><th>Model</th><th>Hebrew only</th><th>English only</th>"
-        "<th>Both</th><th>Neither</th><th>Incomplete</th><th>McNemar p</th></tr></thead>"
+        "<th>Both</th><th>Neither</th><th>Incomplete</th><th>McNemar p</th>"
+        "<th>Holm p</th></tr></thead>"
         f"<tbody>{body}</tbody></table>"
         "<p class='note'>Each cell is the majority over decided repeats. "
-        "Incomplete: a side is missing, all unclear, or tied.</p>"
+        "Incomplete: a side is missing, all unclear, or tied. Holm p corrects the per-model tests "
+        "for multiple comparisons.<br>"
+        f"Sensitivity (all models): unclear counted as succeeded: {as_success['he_only']} vs "
+        f"{as_success['en_only']}, p = {fmt(as_success['mcnemar_p'])}; unclear counted as failed: "
+        f"{as_failure['he_only']} vs {as_failure['en_only']}, p = {fmt(as_failure['mcnemar_p'])}.</p>"
+    )
+
+
+def _stability_section(rows: Sequence[Row]) -> str:
+    agree, total = repeat_stability(rows)
+    if total == 0:
+        return ""
+    return (
+        "<h3>Stability across repeats</h3>"
+        f"<p>Attack cells (scenario and model) whose repeats all agree: <strong>{agree}/{total}"
+        f"</strong> ({agree / total:.0%}).</p>"
+    )
+
+
+def _usage_table(title: str, first_col: str, items: list[tuple[str, dict]]) -> str:
+    if not items:
+        return ""
+    body = "".join(
+        f"<tr><td>{_e(v)}</td><td>{u['runs']}</td><td>{u['input_tokens']:.0f}</td>"
+        f"<td>{u['output_tokens']:.0f}</td><td>{u['latency_s']:.1f}</td>"
+        f"<td>${u['cost_usd']:.4f}</td></tr>"
+        for v, u in items
+    )
+    return (
+        f"<h3>{_e(title)}</h3><table class='small'><thead><tr><th>{_e(first_col)}</th>"
+        "<th>Runs</th><th>Agent input tokens (mean)</th><th>Agent output tokens (mean)</th>"
+        "<th>Latency, s (mean)</th><th>Cost per run (mean, incl. judge)</th></tr></thead>"
+        f"<tbody>{body}</tbody></table>"
     )
 
 
@@ -223,10 +314,17 @@ def render_html(rows: Sequence[Row]) -> str:
             _breakdown_table("Attack success by model", "Model", breakdown(rows, "agent_model")),
             _breakdown_table("Attack success by category", "Category", breakdown(rows, "category")),
             _paired_table(rows),
+            _stability_section(rows),
             _breakdown_table(
                 "Over-refusal on benign controls, by language",
                 "Language",
                 breakdown(rows, "language", benign=True),
+            ),
+            _usage_table(
+                "Tokens, latency and cost by language", "Language", usage_by(rows, "language")
+            ),
+            _usage_table(
+                "Tokens, latency and cost by model", "Model", usage_by(rows, "agent_model")
             ),
         ]
     )

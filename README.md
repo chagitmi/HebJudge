@@ -155,7 +155,8 @@ All attacks in this project run against the project's own mock agent, never agai
 - [ ] Human labeling and judge calibration (agreement, Cohen's kappa)
 - [ ] Statistics (confidence intervals, McNemar test) and full report
 - [ ] Dataset release on Hugging Face
-- [ ] v2: friendly UI, multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, additional provider
+- [ ] v2: run against real agents via adapters (chat API, OpenAI-compatible endpoint, Python function) with parameterized scenarios, with the owner's permission and in a test environment
+- [ ] v2: friendly UI (local `hebjudge ui` and a hosted demo), multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, document-reading agent, additional provider
 
 ## Documentation
 
