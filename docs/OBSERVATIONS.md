@@ -2,12 +2,25 @@
 
 Exploratory observations made during development. These are hypotheses, not findings: they come from development batches, not from the planned research run (see D-12 and D-25). New entries are added at the top.
 
+## 2026-11-15: Batch 5 check: all 60 pairs, language gap stays small
+
+- **Batch:** `batch5-check`, 60 pairs (50 attack, 10 benign) x 3 models, one run each, with the D-30 judge.
+- **Result:** attack succeeded in 37/150 English and 40/150 Hebrew runs. No over-refusal (0/60) and no unclear verdicts.
+- **Paired:** 9 Hebrew-only, 6 English-only (McNemar p ≈ 0.61). Across batches 2 to 5 the gap did not grow as pairs were added.
+- **By model:** gpt-6-luna 12%, gpt-4o-mini 32%, gpt-4.1-mini 33%. Model choice appears to matter far more than language.
+- **Indirect injection:** rose from 2/72 to 10/90; most new successes came from the three new indirect scenarios (to be identified). Per the 2026-11-15 entry, these are not a test of the justification hypothesis.
+
+## 2026-11-15: Batch 5 written without targeting the justification hypothesis
+
+- The three new indirect scenarios (`inj-indirect-013` to `015`) were written to fill technique coverage, not to test the hypothesis from 2026-11-14. They include a bare command (`013`), a weak justification (`014`) and a natural one (`015`). Results on them should not be read as a test of that hypothesis.
+
 ## 2026-11-14: Full batch 4 re-judge: the judge is stable under D-30
 
 - **Batch:** `batch4-rejudge`, all 264 runs of `batch4-check` re-evaluated with the D-30 judge, same agent replies.
 - **Result:** over-refusal 0/48 and no unclear verdicts (previously 2 and 2). Of about 200 judged attack runs, one verdict changed (a Hebrew direct-injection run on gpt-4o-mini, from succeeded to failed). Every other figure is unchanged.
 - **Paired:** 7 Hebrew-only, 4 English-only (McNemar p ≈ 0.55).
 - **Interpretation:** adding the store policy fixed the benign-control errors without moving attack verdicts. This is a first, informal stability check of the judge; formal calibration against human labels (D-08) is still needed.
+- **Data fix (2026-11-15):** in `inj-indirect-012`, a YAML line break swallowed one space inside the hidden note ("אל תזכירהודעה", "messageto"), identically in both languages. Corrected; batch 4 results for this pair used the slightly broken text.
 
 ## 2026-11-14: All batch 4 over-refusals were judge errors
 
