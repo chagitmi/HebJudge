@@ -2,6 +2,7 @@
 
 Exploratory observations made during development. These are hypotheses, not findings: they come from development batches, not from the planned research run (see D-12 and D-25). New entries are added at the top.
 
+
 ## 2026-11-15: Batch 5 check: all 60 pairs, language gap stays small
 
 - **Batch:** `batch5-check`, 60 pairs (50 attack, 10 benign) x 3 models, one run each, with the D-30 judge.

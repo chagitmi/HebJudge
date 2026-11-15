@@ -3,6 +3,19 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+---
+
+### D-33: Pre-registered analysis plan and frozen research setup
+
+- **Decision:** `docs/ANALYSIS_PLAN.md` fixes the primary analysis (exact McNemar on 150 paired cells, α = 0.05), secondary and descriptive analyses, and the handling of unclear data, before the main run. Scenarios, agent prompts, judge and models are frozen at git tag `v0.2.0-frozen`. The 30 Hebrew-only scenarios are analysed separately.
+- **Why:** Writing the analysis before seeing the results prevents choosing, after the fact, the analysis that looks most interesting. The tag lets anyone reproduce the exact setup of `main-v1`.
+
+---
+
+### D-32: Parallel runs with threads; protected batch names
+
+- **Decision:** Runs execute in a thread pool (`--workers`, default 4). Records are saved only from the main thread. The OpenAI client retries rate limits and timeouts (up to 6 times). A batch other than `dev` that already has runs cannot be run again unless `--resume` is given, in which case stored combinations are skipped.
+- **Why:** The full run (about 1,080 runs) would take over an hour sequentially. Threads parallelize the existing, tested agent and judge code without rewriting them for `asyncio` (SPEC 6.3), and single-threaded saving avoids concurrent SQLite writes. Protecting batch names prevents accidental mixing of research runs.
 
 ---
 

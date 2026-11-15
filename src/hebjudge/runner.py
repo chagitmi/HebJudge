@@ -5,6 +5,7 @@ import json
 import sqlite3
 import uuid
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
@@ -20,6 +21,9 @@ from hebjudge.target_agent.prompts import system_prompt
 from hebjudge.target_agent.tools import MockStore
 from hebjudge.trace_store import RunRecord, save_run
 
+# The development batch may be reused freely; any other batch name is protected (D-32).
+DEV_BATCH = "dev"
+
 
 def fingerprint(text: str) -> str:
     """Short, stable hash of a text, used to detect changed scenarios or prompts."""
@@ -30,7 +34,7 @@ def run_one(
     client: OpenAI,
     scenario: Scenario,
     model: str,
-    batch: str = "dev",
+    batch: str = DEV_BATCH,
     repeat_index: int = 0,
 ) -> RunRecord:
     store = MockStore(order_notes=dict(scenario.order_notes))
@@ -84,6 +88,7 @@ def run_one(
 class BatchSummary:
     completed: int = 0
     failed: int = 0
+    skipped: int = 0  # already in the batch, when resuming
     cost_usd: float = 0.0
 
 
@@ -97,25 +102,58 @@ def run_batch(
     run_fn: Callable[..., RunRecord] = run_one,
     on_result: Callable[[int, int, RunRecord], None] | None = None,
     on_error: Callable[[int, int, Scenario, str, Exception], None] | None = None,
+    workers: int = 1,
+    resume: bool = False,
 ) -> BatchSummary:
-    """Run every scenario on every model, `repeats` times, saving each record as it completes."""
+    """Run every scenario on every model, `repeats` times, saving each record as it completes.
+
+    Runs execute in `workers` threads; records are saved from the main thread only, so the
+    database is never written concurrently. With `resume`, combinations already stored in the
+    batch are skipped, so an interrupted batch can be continued.
+    """
     unknown = [m for m in models if m not in MODEL_SETTINGS]
     if unknown:
         raise ValueError(f"no settings defined for models: {unknown}")
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+
+    done = {
+        (row[0], row[1], row[2])
+        for row in conn.execute(
+            "SELECT scenario_id, agent_model, repeat_index FROM runs WHERE batch = ?", (batch,)
+        )
+    }
+    if done and not resume and batch != DEV_BATCH:
+        raise ValueError(
+            f"batch '{batch}' already has {len(done)} runs; "
+            "use --resume to continue it, or choose a new batch name"
+        )
 
     jobs = [(s, m, r) for s in scenarios for m in models for r in range(repeats)]
     summary = BatchSummary()
-    for index, (scenario, model, repeat_index) in enumerate(jobs, start=1):
-        try:
-            record = run_fn(client, scenario, model, batch=batch, repeat_index=repeat_index)
-        except Exception as exc:  # one failed run must not stop the batch
-            summary.failed += 1
-            if on_error:
-                on_error(index, len(jobs), scenario, model, exc)
-            continue
-        save_run(conn, record)
-        summary.completed += 1
-        summary.cost_usd += record.cost_usd
-        if on_result:
-            on_result(index, len(jobs), record)
+    if resume:
+        pending = [(s, m, r) for s, m, r in jobs if (s.id, m, r) not in done]
+        summary.skipped = len(jobs) - len(pending)
+        jobs = pending
+
+    total = len(jobs)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(run_fn, client, s, m, batch=batch, repeat_index=r): (s, m)
+            for s, m, r in jobs
+        }
+        for index, future in enumerate(as_completed(futures), start=1):
+            scenario, model = futures[future]
+            try:
+                record = future.result()
+            except Exception as exc:  # one failed run must not stop the batch
+                summary.failed += 1
+                if on_error:
+                    on_error(index, total, scenario, model, exc)
+                continue
+            save_run(conn, record)
+            summary.completed += 1
+            summary.cost_usd += record.cost_usd
+            if on_result:
+                on_result(index, total, record)
     return summary

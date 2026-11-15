@@ -1,3 +1,5 @@
+import threading
+import uuid
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ from hebjudge.schema import load_scenarios
 from hebjudge.trace_store import connect
 
 SCENARIOS_DIR = Path(__file__).parent.parent / "data" / "scenarios"
+MODELS = ["gpt-6-luna", "gpt-4o-mini"]
 
 
 def test_load_scenarios_from_directory():
@@ -29,33 +32,65 @@ def test_missing_path_is_reported(tmp_path):
         load_scenarios([tmp_path / "nope"])
 
 
-def test_run_batch_runs_every_combination_and_survives_errors(tmp_path):
-    scenarios = load_scenarios([SCENARIOS_DIR / "he"])
+def make_fake_run(fail_on=None):
     calls = []
+    lock = threading.Lock()
 
     def fake_run(client, scenario, model, batch, repeat_index):
-        calls.append((scenario.id, model, repeat_index))
-        if model == "gpt-4o-mini" and repeat_index == 1:
+        with lock:
+            calls.append((scenario.id, model, repeat_index))
+        if fail_on and (model, repeat_index) == fail_on:
             raise RuntimeError("simulated API failure")
         return make_record(
-            run_id=f"{scenario.id}-{model}-{repeat_index}",
+            run_id=uuid.uuid4().hex,
             scenario_id=scenario.id,
             agent_model=model,
             batch=batch,
             repeat_index=repeat_index,
         )
 
+    fake_run.calls = calls
+    return fake_run
+
+
+@pytest.mark.parametrize("workers", [1, 4])
+def test_run_batch_runs_every_combination_and_survives_errors(tmp_path, workers):
+    scenarios = load_scenarios([SCENARIOS_DIR / "he"])
+    fake_run = make_fake_run(fail_on=("gpt-4o-mini", 1))
     conn = connect(tmp_path / "traces.sqlite")
-    summary = run_batch(
-        None, scenarios, ["gpt-6-luna", "gpt-4o-mini"], 2, "test", conn, run_fn=fake_run
-    )
+    summary = run_batch(None, scenarios, MODELS, 2, "test", conn, run_fn=fake_run, workers=workers)
 
     n = len(scenarios)
-    assert len(calls) == n * 2 * 2  # every scenario x model x repeat was attempted
+    assert len(fake_run.calls) == n * 2 * 2  # every scenario x model x repeat was attempted
     assert summary.failed == n  # one simulated failure per scenario
     assert summary.completed == n * 3
     saved = conn.execute("SELECT COUNT(*) FROM runs WHERE batch = 'test'").fetchone()[0]
     assert saved == n * 3
+
+
+def test_resume_runs_only_what_is_missing(tmp_path):
+    scenarios = load_scenarios([SCENARIOS_DIR / "he"])
+    conn = connect(tmp_path / "traces.sqlite")
+    first = make_fake_run(fail_on=("gpt-4o-mini", 1))
+    run_batch(None, scenarios, MODELS, 2, "main", conn, run_fn=first)
+
+    second = make_fake_run()
+    summary = run_batch(None, scenarios, MODELS, 2, "main", conn, run_fn=second, resume=True)
+    n = len(scenarios)
+    assert second.calls == [(s.id, "gpt-4o-mini", 1) for s in scenarios]
+    assert (summary.completed, summary.skipped) == (n, n * 3)
+
+
+def test_existing_batch_is_protected_unless_resuming_or_dev(tmp_path):
+    scenarios = load_scenarios([SCENARIOS_DIR / "he"])
+    conn = connect(tmp_path / "traces.sqlite")
+    run_batch(None, scenarios, MODELS, 1, "main", conn, run_fn=make_fake_run())
+    with pytest.raises(ValueError, match="resume"):
+        run_batch(None, scenarios, MODELS, 1, "main", conn, run_fn=make_fake_run())
+
+    run_batch(None, scenarios, MODELS, 1, "dev", conn, run_fn=make_fake_run())
+    again = run_batch(None, scenarios, MODELS, 1, "dev", conn, run_fn=make_fake_run())
+    assert again.completed == len(scenarios) * len(MODELS)  # the dev batch may be reused
 
 
 def test_run_batch_rejects_unknown_model_before_running(tmp_path):

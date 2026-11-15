@@ -45,10 +45,13 @@ def _run(args: argparse.Namespace) -> int:
         print("Error: no scenario files found")
         return 1
 
+    if args.workers < 1:
+        print("Error: --workers must be at least 1")
+        return 1
     total = len(scenarios) * len(args.models) * args.repeats
     print(
         f"Batch '{args.batch}': {len(scenarios)} scenarios x {len(args.models)} models "
-        f"x {args.repeats} repeats = {total} runs"
+        f"x {args.repeats} repeats = {total} runs, {args.workers} in parallel"
     )
 
     def on_result(index: int, total: int, record: RunRecord) -> None:
@@ -69,7 +72,7 @@ def _run(args: argparse.Namespace) -> int:
     try:
         with connect(args.db) as conn:
             summary = run_batch(
-                OpenAI(),
+                OpenAI(max_retries=6),  # the SDK backs off and retries rate limits and timeouts
                 scenarios,
                 args.models,
                 args.repeats,
@@ -77,6 +80,8 @@ def _run(args: argparse.Namespace) -> int:
                 conn,
                 on_result=on_result,
                 on_error=on_error,
+                workers=args.workers,
+                resume=args.resume,
             )
     except ValueError as exc:
         print(f"Error: {exc}")
@@ -84,7 +89,7 @@ def _run(args: argparse.Namespace) -> int:
 
     print(
         f"Done: {summary.completed} completed, {summary.failed} failed, "
-        f"total cost ${summary.cost_usd:.4f}"
+        f"{summary.skipped} already done (skipped), total cost ${summary.cost_usd:.4f}"
     )
     return 0 if summary.failed == 0 else 1
 
@@ -167,6 +172,10 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--models", nargs="+", default=["gpt-6-luna"])
     run_parser.add_argument("--repeats", type=int, default=1)
     run_parser.add_argument("--batch", default="dev", help="Label stored with every run (D-26)")
+    run_parser.add_argument("--workers", type=int, default=4, help="Runs executed in parallel")
+    run_parser.add_argument(
+        "--resume", action="store_true", help="Continue a batch, skipping runs already stored"
+    )
     run_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
     rejudge_parser = sub.add_parser(
