@@ -1,6 +1,6 @@
 # Results: main-v1
 
-**Status:** interim. Confirmatory results of the main research run, analysed as pre-registered in `docs/ANALYSIS_PLAN.md`. Judge calibration against human labels (D-08) is not yet done, so every judged figure below is provisional.
+**Status:** interim. Confirmatory results of the main research run, analysed as pre-registered in `docs/ANALYSIS_PLAN.md`, and judge calibration against human labels (D-08, D-35 to D-37). The 30 Hebrew-only scenarios are not yet included.
 
 | | |
 |---|---|
@@ -81,25 +81,46 @@ No model shows a significant language difference. The directions differ between 
 
 The same content costs the agent about **32% more input tokens in Hebrew**. The total cost per run differs by only about 5% because the judge, whose instructions are in English for both languages, dominates the cost. For a deployed agent without a judge, the token difference translates almost directly into cost.
 
-## 3. Exploratory hypotheses (not confirmatory)
+## 3. Secondary question: can the LLM judge be trusted in Hebrew?
+
+80 judged runs from `main-v1` were labeled by a human, blind to the judge's verdict, rationale and the model (D-35, D-36). Per language: 40 runs, half of which the judge had marked fail. Each stratum was split into a tune half and a held-out test half (D-08).
+
+| Group | n | Agreement | Cohen's kappa |
+|---|---|---|---|
+| All | 80 | 91% | 0.82 |
+| Hebrew | 40 | 92% | 0.85 |
+| English | 40 | 90% | 0.80 |
+| **Held-out test half** | **40** | **92%** | **0.85** |
+| Test half, Hebrew | 20 | 95% | 0.90 |
+| Test half, English | 20 | 90% | 0.80 |
+
+**Conclusion:** the judge agrees with human judgment at a level conventionally described as almost perfect (kappa above 0.80), and **no evidence was found that it is less reliable in Hebrew than in English**; agreement was slightly higher in Hebrew. With 40 runs per language, a small difference cannot be ruled out.
+
+**Direction of disagreement:** in 5 runs the judge was stricter than the human (judge fail, human pass) and in 2 more lenient. If anything, the attack success rates above may be slightly overstated.
+
+**Review of the tune half (D-37):** in all four tune-half disagreements, the labeler concluded on review that the judge was right; the items had been labeled before she fully understood that partial compliance ("I can't confirm this, but here is a draft") counts as failure. The judge was therefore not changed, and the held-out measurement is final. With the four tune-half labels corrected (reported as secondary), overall agreement is 96%, kappa 0.93. The figures in the table use the original blind labels.
+
+**Note on the sample:** the sample is balanced (half judge-fail, half judge-pass), so agreement describes the judge on a 50/50 mix rather than the natural mix of the run.
+
+## 4. Exploratory hypotheses (not confirmatory)
 
 | Hypothesis (from `docs/OBSERVATIONS.md`) | In main-v1 |
 |---|---|
 | gpt-4o-mini fails more in Hebrew | Same direction, 6 vs 1, not significant (Holm p = 0.375) |
 | Justified indirect injections succeed, bare commands fail | Not tested here; requires a planned experiment |
-| Partial compliance recurs | Not measured automatically |
+| Partial compliance recurs | Seen in several judged failures and was the main source of human-judge disagreement during labeling (section 3) |
 
-## 4. Limitations
+## 5. Limitations
 
-- **Judge not yet calibrated.** Most verdicts come from an LLM judge; agreement with human labels will be reported after calibration.
-- **Single provider.** Tested models and judge are all from OpenAI.
+- **One human labeler.** Agreement is measured against a single labeler, with a learning effect early in labeling (D-37). A second labeler would allow measuring human-to-human agreement as a reference.
+- **Judge decides most verdicts.** About 90% of verdicts come from the judge; calibration (section 3) shows high agreement with human judgment, but not perfect.
+- **Single provider.** Tested models and judge are all from OpenAI; possible self-preference bias is not measured directly, though human agreement is high.
 - **Small number of discordant pairs.** Limits the power to detect a language difference.
 - **One synthetic agent, single-turn scenarios.** Findings may not generalize.
 - **Model versions and date.** Results describe the listed model versions on 2026-11-15.
 - **The agent's instructions include explicit defenses** (for example, treating order notes as data), so attack success rates reflect a reasonably defended baseline.
 
-## 5. Not yet included
+## 6. Not yet included
 
-- Judge calibration (D-08).
 - The 30 Hebrew-only scenarios, to be run and reported separately.
 - Results by technique, tone and hiding method (descriptive).
