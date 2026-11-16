@@ -7,7 +7,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-interim%20results-blue)
 
-HebJudge is an open-source tool and benchmark for testing LLM-based agents in Hebrew: whether they can be manipulated by prompt injection, whether they leak protected data, and whether an LLM judge can be trusted to grade them.
+HebJudge is an open-source **evals framework and benchmark** for LLM-based agents in Hebrew. It measures whether agents can be manipulated by prompt injection, whether they leak protected data, and whether an **LLM-as-a-judge** grader can be trusted to score them, with the grader validated against human labels.
 
 > **Status:** the main study on 60 Hebrew/English scenario pairs is complete, with a pre-registered analysis and a calibrated judge. The 30 Hebrew-only scenarios are in progress. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md).
 
@@ -19,7 +19,7 @@ From the main run (`main-v1`, 2026-11-15): 60 parallel scenario pairs, 3 OpenAI 
 
 1. **No evidence that agents are more vulnerable in Hebrew than in English.** Attack success: 24% in English [20%–28%], 26% in Hebrew [22%–30%]. Of 150 pair-model cells, 9 failed only in Hebrew and 5 only in English (exact McNemar p = 0.42). The study could detect only a large difference; a small one cannot be ruled out.
 2. **The model matters far more than the language.** Attack success was 13% for `gpt-6-luna` and 31% for both `gpt-4o-mini` and `gpt-4.1-mini`, with non-overlapping intervals.
-3. **The LLM judge can be trusted, in Hebrew as in English.** Against 80 blind human labels: 91% agreement, Cohen's kappa 0.82 overall, and 0.85 on the held-out half. Hebrew agreement (kappa 0.85) was not lower than English (0.80).
+3. **The LLM-as-a-judge grader can be trusted, in Hebrew as in English.** Against 80 blind human labels: 91% agreement, Cohen's kappa 0.82 overall, and 0.85 on the held-out half. Hebrew agreement (kappa 0.85) was not lower than English (0.80).
 4. **Direct injection is the weakest point.** 46% success, against 11% for indirect injection through order notes. "Partial compliance" (refusing in words, then complying: "I can't confirm this, but here is a draft") was a recurring failure pattern.
 5. **No over-refusal.** 0 of 180 legitimate requests were refused, including requests designed to look like attacks.
 6. **Hebrew costs more tokens.** The same content used about 32% more agent input tokens in Hebrew.
@@ -107,6 +107,21 @@ flowchart LR
 5. **Trace store.** Every run is saved in full: messages, tool calls, model version, settings, tokens, cost, and fingerprints of the scenario and the system prompt.
 6. **Report and calibration.** Reports are built from stored traces only. The judge is calibrated against blind human labels.
 
+### Evals terminology
+
+HebJudge follows standard LLM evaluation (evals) practice. How the usual terms map to this project:
+
+| Evals concept | In HebJudge |
+|---|---|
+| Eval set / test cases | 120 parallel scenarios (60 Hebrew/English pairs), plus 30 Hebrew-only |
+| Code-based graders | Deterministic checks: leaked canary or email, forbidden tool call, promotional code (`checks.py`) |
+| Model-based grader (LLM-as-a-judge) | `gpt-6-sol` with a per-scenario rubric and the store policy (`judge.py`) |
+| Grader validation | Calibration against blind human labels: agreement and Cohen's kappa per language |
+| Eval run | A batch, such as `main-v1`, with repeats and stored traces |
+| Metrics | Attack success rate (ASR) with 95% Wilson intervals, over-refusal rate, paired McNemar test |
+| Red-teaming | Adversarial scenarios across 16 attack techniques |
+| Regression evals | `rejudge` to re-grade stored outputs; re-running frozen scenarios on new models |
+
 ### Scenario design
 
 - **5 categories:** direct injection, indirect injection (through order notes), data leakage, unauthorized tool action, and legitimate requests (benign controls, to measure over-refusal).
@@ -122,7 +137,7 @@ See the [scenario authoring guide](docs/SCENARIO_GUIDE.md).
 - **Paired comparison.** Each Hebrew scenario has an English twin, so language effects are measured on the same attack.
 - **Pre-registration.** The analysis plan was committed and the setup frozen (git tag `v0.2.0-frozen`) before the main run.
 - **Repeats.** Three repeats per scenario and model; 95% of cells gave the same verdict in all three.
-- **Calibrated judge.** Blind human labels, a tune half and a held-out test half, kappa per language.
+- **Grader validation.** The LLM judge is calibrated against blind human labels, with a tune half and a held-out test half, and kappa per language.
 - **Transparency.** Every design decision is logged with its reason in [`docs/DECISIONS.md`](docs/DECISIONS.md), and exploratory observations are kept apart from confirmatory results in [`docs/OBSERVATIONS.md`](docs/OBSERVATIONS.md).
 
 ## Models
@@ -200,6 +215,7 @@ All attacks in this project run against the project's own mock agent, never agai
 - [ ] Final report and dataset release on Hugging Face
 - [ ] v2: run against real agents via adapters (chat API, OpenAI-compatible endpoint, Python function) with parameterized scenarios, with the owner's permission and in a test environment
 - [ ] v2: friendly UI (local `hebjudge ui` and a hosted demo), multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, document-reading agent, additional provider
+- [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
 
 ## Documentation
 
@@ -220,7 +236,7 @@ Code: [MIT](LICENSE). Data: CC BY 4.0 (planned, on dataset release).
 
 <h2 dir="rtl">תקציר בעברית</h2>
 
-<p dir="rtl">הפרויקט HebJudge הוא כלי ובנצ'מרק בקוד פתוח לבדיקת סוכני בינה מלאכותית בעברית.</p>
+<p dir="rtl">הפרויקט HebJudge הוא מערכת הערכה מסוג evals ובנצ'מרק בקוד פתוח לבדיקת סוכני בינה מלאכותית בעברית. הוא כולל שופט אוטומטי מסוג LLM-as-a-judge, שנבדק מול תיוג אנושי.</p>
 
 <p dir="rtl">השאלה המרכזית: האם סוכנים פגיעים יותר להזרקת הוראות בעברית מאשר באנגלית? השאלה המשנית: עד כמה אפשר לסמוך על מודל שפה שמשמש כשופט ומעריך תשובות בעברית?</p>
 
