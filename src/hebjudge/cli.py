@@ -150,8 +150,35 @@ DEFAULT_LABELS_DIR = Path("data/labels")
 DEFAULT_LABELING_DIR = Path("data/runs/calibration")
 
 
+def _write_labeling_page(batch: str, sample_file: dict, scenarios_args: list[str], db: str) -> Path:
+    from hebjudge.calibration import labeling_items, render_labeling_html
+    from hebjudge.schema import load_scenarios
+
+    scenarios = {s.id: s for s in load_scenarios(scenarios_args)}
+    with connect(db) as conn:
+        rows = conn.execute("SELECT * FROM runs WHERE batch = ?", (batch,)).fetchall()
+    rows_by_id = {r["run_id"]: r for r in rows}
+    items = labeling_items(sample_file["items"], rows_by_id, scenarios)
+    DEFAULT_LABELING_DIR.mkdir(parents=True, exist_ok=True)
+    page_path = DEFAULT_LABELING_DIR / f"label-{batch}.html"
+    page_path.write_text(render_labeling_html(items, sample_file["sample_id"]), encoding="utf-8")
+    return page_path
+
+
+def _calibrate_page(args: argparse.Namespace) -> int:
+    sample_path = DEFAULT_LABELS_DIR / f"sample-{args.batch}.json"
+    if not sample_path.exists() or not Path(args.db).exists():
+        print(f"Not found: {sample_path} or {args.db}. Run 'hebjudge calibrate sample' first.")
+        return 1
+    sample_file = json.loads(sample_path.read_text(encoding="utf-8"))
+    page_path = _write_labeling_page(args.batch, sample_file, args.scenarios, args.db)
+    print(f"Labeling page rebuilt from the existing sample: {page_path}")
+    print("Labels already entered in the browser are kept.")
+    return 0
+
+
 def _calibrate_sample(args: argparse.Namespace) -> int:
-    from hebjudge.calibration import labeling_items, render_labeling_html, select_sample
+    from hebjudge.calibration import select_sample
     from hebjudge.schema import load_scenarios
 
     if not Path(args.db).exists():
@@ -183,10 +210,12 @@ def _calibrate_sample(args: argparse.Namespace) -> int:
         ),
         encoding="utf-8",
     )
-    DEFAULT_LABELING_DIR.mkdir(parents=True, exist_ok=True)
-    page_path = DEFAULT_LABELING_DIR / f"label-{args.batch}.html"
-    items = labeling_items(sample, rows_by_id, scenarios)
-    page_path.write_text(render_labeling_html(items, sample_id), encoding="utf-8")
+    page_path = _write_labeling_page(
+        args.batch,
+        {"sample_id": sample_id, "items": sample},
+        args.scenarios,
+        args.db,
+    )
 
     by_stratum: dict[tuple, int] = {}
     for entry in sample:
@@ -291,6 +320,12 @@ def main(argv: list[str] | None = None) -> int:
     sample_parser.add_argument("--scenarios", nargs="+", default=["data/scenarios"])
     sample_parser.add_argument("--force", action="store_true")
     sample_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+    page_parser = calibrate_sub.add_parser(
+        "page", help="Rebuild the labeling page from the existing sample (keeps labels)"
+    )
+    page_parser.add_argument("--batch", required=True)
+    page_parser.add_argument("--scenarios", nargs="+", default=["data/scenarios"])
+    page_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
     score_parser = calibrate_sub.add_parser("score", help="Agreement and kappa vs. the judge")
     score_parser.add_argument("--batch", required=True)
     score_parser.add_argument("--labels", required=True, help="Labels JSON from the labeling page")
@@ -313,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
         return _report(args)
     if args.command == "calibrate" and args.calibrate_command == "sample":
         return _calibrate_sample(args)
+    if args.command == "calibrate" and args.calibrate_command == "page":
+        return _calibrate_page(args)
     if args.command == "calibrate" and args.calibrate_command == "score":
         return _calibrate_score(args)
     parser.print_help()

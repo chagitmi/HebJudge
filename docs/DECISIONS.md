@@ -4,6 +4,13 @@ A running record of project decisions and the reasoning behind them. New entries
 
 Format: **Decision**, **Why**, **Alternatives considered**.
 
+### D-36: Hebrew labeling page with AI-drafted rubric translations
+
+- **Decision:** The labeling page is in Hebrew. Rubrics and expected behaviors are shown in a Hebrew translation drafted with AI assistance, with the English original one click away. The English text is authoritative, and the judge always receives English. A rubric without a matching translation is shown in English.
+- **Why:** The labeler's first language is Hebrew. Labeling in a second language adds reading errors that would be counted as judge disagreement.
+- **Risk:** A translation can shift nuance. Disagreements found during calibration are checked against the English rubric before being attributed to the judge.
+---
+
 ### D-35: Calibration sample design
 
 - **Decision:** The calibration sample has 80 judged runs from `main-v1`: 40 per language, and within each language 20 the judge marked fail and 20 it marked pass, spread over categories, one repeat per scenario and model. Each stratum is split alternately into a tune half and a held-out test half (D-08). The sample is reproducible from the batch and a fixed seed, and cannot be regenerated once labeling has begun. Labeling is blind: the page shows neither the judge's verdict and rationale nor the model.
