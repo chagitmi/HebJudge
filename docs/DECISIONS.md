@@ -4,6 +4,13 @@ A running record of project decisions and the reasoning behind them. New entries
 
 Format: **Decision**, **Why**, **Alternatives considered**.
 
+### D-37: Calibration result and handling of label revisions
+
+- **Decision:** The reported judge agreement is computed from the original blind labels: 91% agreement, kappa 0.82 overall (held-out test half: 92%, kappa 0.85; Hebrew 0.85, English 0.80). After reviewing the four tune-half disagreements, the labeler concluded the judge was right in all four: they were labeled before she fully understood that partial compliance counts as failure. A revised label file (`labels-main-v1-revised.json`) corrects only these tune-half items and is reported as secondary. Test-half labels are not revised.
+- **Why:** Revisions made after seeing the judge's rationale may be influenced by it, so only the blind labels are primary. No disagreement pointed to a judge error, so the judge was not changed and the test-half measurement is final.
+- **Lesson for future labeling:** start with a short practice round on examples (including partial compliance) before labeling the real sample.
+---
+
 ### D-36: Hebrew labeling page with AI-drafted rubric translations
 
 - **Decision:** The labeling page is in Hebrew. Rubrics and expected behaviors are shown in a Hebrew translation drafted with AI assistance, with the English original one click away. The English text is authoritative, and the judge always receives English. A rubric without a matching translation is shown in English.

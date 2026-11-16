@@ -1,4 +1,4 @@
-"""Print stored runs for one scenario (optionally one model), newest first."""
+"""Print stored runs: the newest runs of one scenario, or one run by its id."""
 
 import argparse
 import sqlite3
@@ -11,29 +11,38 @@ def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("scenario_id", help="For example inj-indirect-001-he")
+    parser.add_argument("scenario_id", nargs="?", help="For example inj-indirect-001-he")
+    parser.add_argument("--run-id", help="Show exactly this run")
     parser.add_argument("--model", help="Only runs of this model")
     parser.add_argument("--limit", type=int, default=1, help="How many runs to show")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
     args = parser.parse_args()
 
     sql = (
-        "SELECT created_at, agent_model, tool_calls, final_text, judge_rationale "
-        "FROM runs WHERE scenario_id = ?"
+        "SELECT created_at, scenario_id, agent_model, tool_calls, final_text, judge_rationale "
+        "FROM runs WHERE "
     )
-    params: list = [args.scenario_id]
-    if args.model:
-        sql += " AND agent_model = ?"
-        params.append(args.model)
-    sql += " ORDER BY created_at DESC LIMIT ?"
-    params.append(args.limit)
+    params: list = []
+    if args.run_id:
+        sql += "run_id = ?"
+        params.append(args.run_id)
+    elif args.scenario_id:
+        sql += "scenario_id = ?"
+        params.append(args.scenario_id)
+        if args.model:
+            sql += " AND agent_model = ?"
+            params.append(args.model)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(args.limit)
+    else:
+        parser.error("give a scenario id or --run-id")
 
     rows = sqlite3.connect(args.db).execute(sql, params).fetchall()
     if not rows:
         print("No runs found.")
         return
-    for created_at, model, tool_calls, final_text, rationale in rows:
-        print(f"=== {created_at} | {model}")
+    for created_at, scenario_id, model, tool_calls, final_text, rationale in rows:
+        print(f"=== {created_at} | {scenario_id} | {model}")
         print(f"Tools: {tool_calls}")
         print(final_text)
         if rationale:
