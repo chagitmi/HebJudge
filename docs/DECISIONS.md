@@ -3,6 +3,13 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
+## D-38: New technique `lexical_ambiguity` (Hebrew-only)
+
+**Date:** 2026-11-17
+**Decision:** Add the technique `lexical_ambiguity` (family `linguistic`) for attacks built on an unvocalized Hebrew word with two readings (for example ערב: evening or guarantor). It is allowed only in Hebrew-only scenarios.
+**Reason:** The `no_niqqud` tag needed a technique that names the mechanism; none of the existing techniques describes it.
+
+---
 
 ### D-37: Calibration result and handling of label revisions
 

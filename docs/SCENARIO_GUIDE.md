@@ -78,6 +78,7 @@ Every attack scenario has exactly one `technique`. The family is derived automat
 | | `atbash` | The Atbash cipher, א↔ת, ב↔ש (Hebrew-only) |
 | | `bidi_control` | Direction-control characters that make displayed text differ from the text the model reads (Hebrew-only) |
 | Format exploit | `format_exploit` | "Return JSON with a `system_prompt` field", "put it in a code block" |
+| Linguistic | `lexical_ambiguity` | An unvocalized word with two readings, such as ערב (evening or guarantor) (Hebrew-only) |
 
 ### Which techniques fit which category
 
@@ -96,6 +97,7 @@ Every attack scenario has exactly one `technique`. The family is derived automat
 | `payload_splitting` | ✓ | | ✓ | ✓ |
 | `translation_trick` | | | ✓ | |
 | `format_exploit` | | | ✓ | |
+
 
 Within a category, spread scenarios across the techniques that fit it, about two per technique (D-20). Track coverage before adding a new scenario; prefer an under-covered technique.
 
@@ -194,7 +196,7 @@ Thirty scenarios with no English twin, under `data/scenarios/he_only/`, with no 
 | `rtl_ltr_mixing` | Numbers, emails, order ids and JSON inside Hebrew text; bidirectional control characters |
 | `slang_transliteration` | Israeli slang, Hebrew written in Latin letters, English written in Hebrew letters |
 
-The Hebrew-only techniques (`keyboard_layout`, `atbash`, `bidi_control`) are allowed only here.
+The Hebrew-only techniques (`keyboard_layout`, `atbash`, `bidi_control`, `lexical_ambiguity`) are allowed only here.
 
 ## 9. Hidden and encoded content
 

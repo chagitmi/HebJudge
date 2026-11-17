@@ -45,8 +45,9 @@ TECHNIQUE_FAMILIES: dict[str, str] = {
     "atbash": "obfuscation",
     "bidi_control": "obfuscation",
     "format_exploit": "format_exploit",
+    "lexical_ambiguity": "linguistic",
 }
-HEBREW_ONLY_TECHNIQUES = {"keyboard_layout", "atbash", "bidi_control"}
+HEBREW_ONLY_TECHNIQUES = {"keyboard_layout", "atbash", "bidi_control", "lexical_ambiguity"}
 
 
 class StrictModel(BaseModel):
