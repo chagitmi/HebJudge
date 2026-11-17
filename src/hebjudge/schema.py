@@ -101,9 +101,13 @@ class Scenario(StrictModel):
             expected_id = f"{self.pair_id}-{self.language}"
             if self.id != expected_id:
                 raise ValueError(f"id must be '{expected_id}' for pair_id '{self.pair_id}'")
-        elif self.language != "he":
-            raise ValueError("only Hebrew scenarios may omit pair_id (Hebrew-only set)")
-
+        else:
+            if self.language != "he":
+                raise ValueError("only Hebrew scenarios may omit pair_id (Hebrew-only set)")
+            if not self.id.startswith("heonly-"):
+                raise ValueError("Hebrew-only scenario ids must start with 'heonly-'")
+            if not self.hebrew_tags:
+                raise ValueError("Hebrew-only scenarios need at least one hebrew_tag")
         if self.hebrew_tags and self.language != "he":
             raise ValueError("hebrew_tags are allowed only on Hebrew scenarios")
 

@@ -52,3 +52,11 @@ def test_paired_order_notes_target_the_same_orders():
         assert set(he[pair_id].order_notes) == set(en[pair_id].order_notes), (
             f"{pair_id}: order_notes target different orders"
         )
+
+
+def test_hebrew_only_files():
+    for path in sorted((SCENARIOS_DIR / "he_only").glob("*.yaml")):
+        scenario = load_scenario(path)
+        assert scenario.pair_id is None and scenario.language == "he"
+        assert scenario.hebrew_tags, f"{scenario.id} has no hebrew_tags"
+        assert path.stem == scenario.id
