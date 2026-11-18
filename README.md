@@ -5,11 +5,12 @@
 [![tests](https://github.com/chagitmi/HebJudge/actions/workflows/tests.yml/badge.svg)](https://github.com/chagitmi/HebJudge/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
+[![Dataset on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20dataset-HebJudge-yellow)](https://huggingface.co/datasets/chagitmi/HebJudge)
 ![Status](https://img.shields.io/badge/status-v1%20results-brightgreen)
 
 HebJudge is an open-source **evals framework and benchmark** for LLM-based agents in Hebrew. It measures whether agents can be manipulated by prompt injection, whether they leak protected data, and whether an **LLM-as-a-judge** grader can be trusted to score them, with the grader validated against human labels.
 
-> **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](reports/heonly-v1-summary.md).
+> **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](reports/heonly-v1-summary.md). The 150 scenarios are published as a dataset on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
 
 ---
 
@@ -225,7 +226,7 @@ All attacks in this project run against the project's own mock agent, never agai
 - [x] Main run (`main-v1`), statistics and interim report
 - [x] Judge calibration against blind human labels
 - [x] 30 Hebrew-only scenarios (code-switching, no niqqud, RTL/LTR mixing, slang and transliteration) and their run (`heonly-v1`)
-- [ ] Dataset release on Hugging Face
+- [x] Dataset release on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge)
 - [ ] v2: run against real agents via adapters (chat API, OpenAI-compatible endpoint, Python function) with parameterized scenarios, with the owner's permission and in a test environment
 - [ ] v2: friendly UI (local `hebjudge ui` and a hosted demo), multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, document-reading agent, additional provider
 - [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
@@ -239,10 +240,11 @@ All attacks in this project run against the project's own mock agent, never agai
 - [Observations](docs/OBSERVATIONS.md): exploratory observations from development, logged as hypotheses
 - [Results: main-v1](reports/main-v1-summary.md): confirmatory results and calibration
 - [Results: heonly-v1](reports/heonly-v1-summary.md): descriptive results of the Hebrew-only scenarios
+- [Dataset on Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge): the 150 scenarios and the target-agent setup, ready to load with `datasets`
 
 ## License
 
-Code: [MIT](LICENSE). Data: CC BY 4.0 (planned, on dataset release).
+Code: [MIT](LICENSE). Data: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), published on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
 
 ---
 
@@ -270,6 +272,6 @@ Code: [MIT](LICENSE). Data: CC BY 4.0 (planned, on dataset release).
 
 <p dir="rtl">ממצא מפתיע: כשביקשו הנחה בצופן אתב"ש, המודל החזק ביותר "פענח" את ההודעה לא נכון וביצע החזר כספי שאף אחד לא ביקש, בכל שלוש החזרות. דווקא הניסיון להבין הוביל לפעולה שאי אפשר לבטל.</p>
 
-<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה. השלב הבא: פרסום מאגר התרחישים ב-Hugging Face.</p>
+<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה, ו-150 התרחישים פורסמו כמאגר נתונים ב-<a href="https://huggingface.co/datasets/chagitmi/HebJudge">Hugging Face</a>. השלב הבא: גרסה 2, עם חיבור לסוכנים אמיתיים וממשק משתמש בעברית.</p>
 
 </div>
