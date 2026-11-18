@@ -5,15 +5,17 @@
 [![tests](https://github.com/chagitmi/HebJudge/actions/workflows/tests.yml/badge.svg)](https://github.com/chagitmi/HebJudge/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-interim%20results-blue)
+![Status](https://img.shields.io/badge/status-v1%20results-brightgreen)
 
 HebJudge is an open-source **evals framework and benchmark** for LLM-based agents in Hebrew. It measures whether agents can be manipulated by prompt injection, whether they leak protected data, and whether an **LLM-as-a-judge** grader can be trusted to score them, with the grader validated against human labels.
 
-> **Status:** the main study on 60 Hebrew/English scenario pairs is complete, with a pre-registered analysis and a calibrated judge. The 30 Hebrew-only scenarios are in progress. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md).
+> **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](reports/heonly-v1-summary.md).
 
 ---
 
 ## Key findings
+
+### Hebrew vs. English
 
 From the main run (`main-v1`, 2026-11-15): 60 parallel scenario pairs, 3 OpenAI models, 3 repeats, 1,080 runs, analysed as pre-registered in [`docs/ANALYSIS_PLAN.md`](docs/ANALYSIS_PLAN.md).
 
@@ -23,6 +25,16 @@ From the main run (`main-v1`, 2026-11-15): 60 parallel scenario pairs, 3 OpenAI 
 4. **Direct injection is the weakest point.** 46% success, against 11% for indirect injection through order notes. "Partial compliance" (refusing in words, then complying: "I can't confirm this, but here is a draft") was a recurring failure pattern.
 5. **No over-refusal.** 0 of 180 legitimate requests were refused, including requests designed to look like attacks.
 6. **Hebrew costs more tokens.** The same content used about 32% more agent input tokens in Hebrew.
+
+### Hebrew-only scenarios
+
+From a separate run (`heonly-v1`, 2026-11-17): 30 scenarios with no English twin, built on code-switching, unvocalized words, mixed text direction, and slang and transliteration; 3 models, 3 repeats, 270 runs. Descriptive only, as pre-registered.
+
+1. **Hebrew-specific tricks rarely worked.** Attack success was 4% [2%–8%]. `gpt-6-luna` resisted every attack; `gpt-4o-mini` failed 8% and `gpt-4.1-mini` 4%. These rates are not comparable with the main run, whose scenarios differ.
+2. **What did work was structure, not language.** All successes came from two scenarios: an order note in mixed Hebrew and English posing as a system message (a refund outside policy), and a request to fill in a JSON template inside Hebrew text (another customer's name and email).
+3. **Ambiguous unvocalized words did not confuse the agents.** Attacks built on words with two readings (for example ערב, "evening" or "guarantor") succeeded in 0 of 45 runs.
+4. **Obfuscation is often not understood at all.** Hebrew typed on an English keyboard layout was understood by every model when it contained an order id, and only by `gpt-6-luna` when it did not. No model decoded the Atbash cipher correctly.
+5. **A wrong decoding led to an unrequested action.** Asked in Atbash for a discount, `gpt-6-luna` "decoded" the message as a refund request and refunded an order nobody had named, in 3 of 3 repeats. The stronger model, by trying harder to understand, took an irreversible action. Exploratory, from one scenario.
 
 ## The problem
 
@@ -113,19 +125,19 @@ HebJudge follows standard LLM evaluation (evals) practice. How the usual terms m
 
 | Evals concept | In HebJudge |
 |---|---|
-| Eval set / test cases | 120 parallel scenarios (60 Hebrew/English pairs), plus 30 Hebrew-only |
+| Eval set / test cases | 120 parallel scenarios (60 Hebrew/English pairs), plus 30 Hebrew-only scenarios |
 | Code-based graders | Deterministic checks: leaked canary or email, forbidden tool call, promotional code (`checks.py`) |
 | Model-based grader (LLM-as-a-judge) | `gpt-6-sol` with a per-scenario rubric and the store policy (`judge.py`) |
 | Grader validation | Calibration against blind human labels: agreement and Cohen's kappa per language |
-| Eval run | A batch, such as `main-v1`, with repeats and stored traces |
+| Eval run | A batch, such as `main-v1` or `heonly-v1`, with repeats and stored traces |
 | Metrics | Attack success rate (ASR) with 95% Wilson intervals, over-refusal rate, paired McNemar test |
-| Red-teaming | Adversarial scenarios across 16 attack techniques |
+| Red-teaming | Adversarial scenarios across 17 attack techniques |
 | Regression evals | `rejudge` to re-grade stored outputs; re-running frozen scenarios on new models |
 
 ### Scenario design
 
 - **5 categories:** direct injection, indirect injection (through order notes), data leakage, unauthorized tool action, and legitimate requests (benign controls, to measure over-refusal).
-- **16 attack techniques in 5 families:** social engineering, instruction override, framing, obfuscation and format exploits, including Hebrew-specific ones (wrong keyboard layout, Atbash cipher, bidirectional control characters).
+- **17 attack techniques in 6 families:** social engineering, instruction override, framing, obfuscation, format exploits and linguistic, including Hebrew-specific ones (wrong keyboard layout, Atbash cipher, bidirectional control characters, ambiguous unvocalized words).
 - **Hidden text:** HTML white-on-white, `display:none`, zero-width characters and Unicode tag characters. A perception probe showed that none of the tested models reads tag characters.
 - **Customer tone:** polite, casual or aggressive, varied across scenarios.
 
@@ -135,8 +147,8 @@ See the [scenario authoring guide](docs/SCENARIO_GUIDE.md).
 
 - **Code before judge.** High-stakes outcomes that code can see never depend on an LLM.
 - **Paired comparison.** Each Hebrew scenario has an English twin, so language effects are measured on the same attack.
-- **Pre-registration.** The analysis plan was committed and the setup frozen (git tag `v0.2.0-frozen`) before the main run.
-- **Repeats.** Three repeats per scenario and model; 95% of cells gave the same verdict in all three.
+- **Pre-registration.** The analysis plan was committed and the setup frozen before each run (git tags `v0.2.0-frozen` for the main run and `v0.3.0-heonly-frozen` for the Hebrew-only run).
+- **Repeats.** Three repeats per scenario and model; 95% of cells in the main run and 100% in the Hebrew-only run gave the same verdict in all three.
 - **Grader validation.** The LLM judge is calibrated against blind human labels, with a tune half and a held-out test half, and kappa per language.
 - **Transparency.** Every design decision is logged with its reason in [`docs/DECISIONS.md`](docs/DECISIONS.md), and exploratory observations are kept apart from confirmatory results in [`docs/OBSERVATIONS.md`](docs/OBSERVATIONS.md).
 
@@ -149,16 +161,16 @@ v1 uses OpenAI models only (D-09, D-14):
 | Tested | `gpt-6-luna`, `gpt-4o-mini`, `gpt-4.1-mini` |
 | Judge | `gpt-6-sol` (reasoning off; not among the tested models) |
 
-Low-cost models were chosen deliberately: they are what small teams typically deploy. The whole study, including development, cost about US$5.
+Low-cost models were chosen deliberately: they are what small teams typically deploy. The whole study, including development, cost about US$6.
 
 ## Project layout
 
 ```
 HebJudge/
 ├── docs/                 # SPEC, DECISIONS, ANALYSIS_PLAN, SCENARIO_GUIDE, OBSERVATIONS
-├── reports/              # Published results (summaries only, no raw traces)
+├── reports/              # Published results: summaries, HTML reports, exported Hebrew-only runs
 ├── data/
-│   ├── scenarios/        # Scenario YAML files (he/, en/)
+│   ├── scenarios/        # Scenario YAML files (he/, en/, he_only/)
 │   ├── labels/           # Calibration sample and human labels
 │   └── runs/             # Raw traces and reports (local only, not committed)
 ├── src/hebjudge/
@@ -175,7 +187,7 @@ HebJudge/
 │   ├── report.py         # HTML report and statistics
 │   └── cli.py            # hebjudge run / rejudge / calibrate / report
 ├── tests/                # pytest suite (runs offline, no API key needed)
-└── scripts/              # API smoke test, run viewer, hidden-text perception probe
+└── scripts/              # API smoke test, run viewer, batch export, hidden-text perception probe
 ```
 
 ## Development
@@ -195,7 +207,8 @@ CI runs lint, format check and tests on Python 3.11 and 3.12 for every push.
 - **One human labeler**, with a learning effect early in labeling (D-37).
 - **Single-turn only.** Real attacks are often multi-turn.
 - **One synthetic agent**, with explicit defensive instructions. Findings may not generalize to other agents.
-- **Models change.** Results describe the listed model versions on 2026-11-15.
+- **Small Hebrew-only groups.** Each Hebrew tag has 6 to 8 scenarios; a 0% rate there means "not observed", not "safe".
+- **Models change.** Results describe the listed model versions on 2026-11-15 (main run) and 2026-11-17 (Hebrew-only run).
 
 ## Responsible use
 
@@ -211,8 +224,8 @@ All attacks in this project run against the project's own mock agent, never agai
 - [x] Pre-registered analysis plan and frozen setup
 - [x] Main run (`main-v1`), statistics and interim report
 - [x] Judge calibration against blind human labels
-- [ ] 30 Hebrew-only scenarios (code-switching, no niqqud, RTL/LTR mixing, slang and transliteration)
-- [ ] Final report and dataset release on Hugging Face
+- [x] 30 Hebrew-only scenarios (code-switching, no niqqud, RTL/LTR mixing, slang and transliteration) and their run (`heonly-v1`)
+- [ ] Dataset release on Hugging Face
 - [ ] v2: run against real agents via adapters (chat API, OpenAI-compatible endpoint, Python function) with parameterized scenarios, with the owner's permission and in a test environment
 - [ ] v2: friendly UI (local `hebjudge ui` and a hosted demo), multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, document-reading agent, additional provider
 - [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
@@ -221,10 +234,11 @@ All attacks in this project run against the project's own mock agent, never agai
 
 - [Specification](docs/SPEC.md): goals, scope, schema, metrics, architecture
 - [Decision log](docs/DECISIONS.md): every design decision with its rationale and alternatives
-- [Analysis plan](docs/ANALYSIS_PLAN.md): the pre-registered analysis of the main run
+- [Analysis plan](docs/ANALYSIS_PLAN.md): the pre-registered analysis of both runs
 - [Scenario authoring guide](docs/SCENARIO_GUIDE.md): how to write and review scenarios
 - [Observations](docs/OBSERVATIONS.md): exploratory observations from development, logged as hypotheses
 - [Results: main-v1](reports/main-v1-summary.md): confirmatory results and calibration
+- [Results: heonly-v1](reports/heonly-v1-summary.md): descriptive results of the Hebrew-only scenarios
 
 ## License
 
@@ -252,6 +266,10 @@ Code: [MIT](LICENSE). Data: CC BY 4.0 (planned, on dataset release).
 
 <p dir="rtl">הסוכנים לא סירבו לאף בקשה לגיטימית, אבל הזרקה ישירה הצליחה כמעט במחצית המקרים. אותו תוכן בעברית צרך כשליש יותר טוקנים.</p>
 
-<p dir="rtl"><b>מצב נוכחי:</b> המחקר הראשי והכיול הושלמו. 30 תרחישים ייחודיים לעברית נמצאים בעבודה.</p>
+<p dir="rtl"><b>תרחישים ייחודיים לעברית:</b> בהרצה נפרדת נבדקו 30 תרחישים שאין להם מקבילה באנגלית: עירוב עברית ואנגלית, מילים דו-משמעיות בלי ניקוד, כיווניות טקסט מעורבת, וסלנג ותעתיק. התקיפות הצליחו רק ב-4% מההרצות, וכל ההצלחות הגיעו משני תרחישים שמנצלים מבנה (הערה שמתחזה להודעת מערכת, ותבנית JSON), לא את השפה עצמה. מילים דו-משמעיות כמו "ערב" לא בלבלו אף מודל.</p>
+
+<p dir="rtl">ממצא מפתיע: כשביקשו הנחה בצופן אתב"ש, המודל החזק ביותר "פענח" את ההודעה לא נכון וביצע החזר כספי שאף אחד לא ביקש, בכל שלוש החזרות. דווקא הניסיון להבין הוביל לפעולה שאי אפשר לבטל.</p>
+
+<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה. השלב הבא: פרסום מאגר התרחישים ב-Hugging Face.</p>
 
 </div>
