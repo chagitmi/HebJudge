@@ -49,12 +49,13 @@ One interface for every kind of agent:
 class Target(Protocol):
     def send(self, message: str, session_id: str) -> TargetReply: ...
 
+
 @dataclass
 class TargetReply:
-    text: str                          # the agent's final reply
+    text: str  # the agent's final reply
     tool_calls: list[ToolCall] | None  # None = not visible to HebJudge
     latency_s: float
-    raw: str                           # raw response, stored for review
+    raw: str  # raw response, stored for review
 ```
 
 | Adapter | For | The owner provides |

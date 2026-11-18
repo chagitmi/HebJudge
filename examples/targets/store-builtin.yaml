@@ -1,0 +1,6 @@
+# The v1 mock store agent, called directly. Each message costs a fraction of a cent.
+name: Ofek Home store agent (built-in)
+target:
+  adapter: builtin_store
+  model: gpt-4o-mini
+  language: he

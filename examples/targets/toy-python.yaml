@@ -1,0 +1,6 @@
+# The toy agent: rule-based, no model, no cost. Deliberately vulnerable.
+# Try it:  hebjudge target test examples/targets/toy-python.yaml
+name: Toy agent (rule-based)
+target:
+  adapter: python
+  function: examples/toy_agent.py:respond

@@ -1,4 +1,4 @@
-"""Command-line interface: hebjudge run / rejudge / calibrate / report."""
+"""Command-line interface: hebjudge run / rejudge / calibrate / report / target."""
 
 import argparse
 import json
@@ -280,6 +280,41 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _target_test(args: argparse.Namespace) -> int:
+    """Send one harmless message to a target and show the reply (v2 design, section 3)."""
+    import uuid
+
+    from dotenv import load_dotenv
+
+    from hebjudge.targets import HELLO_MESSAGE, TargetError, build_target, load_target_file
+
+    load_dotenv()
+    try:
+        target_file = load_target_file(args.config)
+        target = build_target(target_file)
+    except (ValueError, FileNotFoundError, TargetError) as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    message = args.message or HELLO_MESSAGE
+    print(f"Target:  {target_file.name} ({target_file.target.adapter})")
+    print(f"Sending: {message}")
+    try:
+        reply = target.send(message, session_id=f"hebjudge-test-{uuid.uuid4().hex[:8]}")
+    except TargetError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    print(f"Reply:   {reply.text}")
+    if reply.tool_calls is None:
+        print("Tools:   not visible (only the reply text can be checked)")
+    else:
+        calls = [(c.name, c.arguments) for c in reply.tool_calls]
+        print(f"Tools:   {calls or 'none'}")
+    print(f"Latency: {reply.latency_s:.2f} s")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -339,6 +374,14 @@ def main(argv: list[str] | None = None) -> int:
     report_parser.add_argument("--out", default=str(DEFAULT_REPORT_PATH))
     report_parser.add_argument("--batch", default=None, help="Only include runs from this batch")
 
+    target = sub.add_parser("target", help="Work with an agent under test (v2)")
+    target_sub = target.add_subparsers(dest="target_command")
+    target_test_parser = target_sub.add_parser(
+        "test", help="Send one harmless message to the agent and show its reply"
+    )
+    target_test_parser.add_argument("config", help="Target YAML file")
+    target_test_parser.add_argument("--message", help="Message to send instead of the default")
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
@@ -352,6 +395,8 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate_page(args)
     if args.command == "calibrate" and args.calibrate_command == "score":
         return _calibrate_score(args)
+    if args.command == "target" and args.target_command == "test":
+        return _target_test(args)
     parser.print_help()
     return 0
 

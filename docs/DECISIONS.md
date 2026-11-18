@@ -3,11 +3,30 @@
 A running record of project decisions and the reasoning behind them. New entries are added at the top of the relevant section; superseded decisions are marked, not deleted.
 
 Format: **Decision**, **Why**, **Alternatives considered**.
-## D-38: New technique `lexical_ambiguity` (Hebrew-only)
 
-**Date:** 2026-11-17
-**Decision:** Add the technique `lexical_ambiguity` (family `linguistic`) for attacks built on an unvocalized Hebrew word with two readings (for example ערב: evening or guarantor). It is allowed only in Hebrew-only scenarios.
-**Reason:** The `no_niqqud` tag needed a technique that names the mechanism; none of the existing techniques describes it.
+---
+
+### D-40: Adapters for agents under test
+
+- **Decision:** Every agent is reached through one interface, `Target.send(message, session_id) -> TargetReply` (reply text, tool calls or `None` when they are not visible, latency, raw response). Four adapters: `builtin_store` (the v1 agent), `openai_compatible` (a system prompt on a model, through the Chat Completions API, which most providers and local servers support), `http` (any JSON endpoint, with a request template and dotted paths to the reply and, optionally, the tool calls) and `python` (a function). A target is described in a YAML file; secrets are referenced only by environment-variable name (`api_key_env`, or `${VAR}` in a header) and are resolved before any message is sent. Each message gets a fresh session id. The HTTP adapter uses the standard library only, so no dependency is added. `hebjudge target test` sends one harmless message to check a connection.
+- **Why:** The checks and the judge already work on a reply text and a list of tool calls, so a thin interface is enough to reuse all of v1. Marking tool calls as "not visible" instead of "none" keeps the report honest: a forbidden action cannot be ruled out from text alone. Keeping keys out of files keeps them out of git and out of traces.
+- **Alternatives considered:** The Responses API for `openai_compatible` (rejected: fewer compatible providers); a general HTTP client library (rejected for now: not needed for JSON requests); multi-turn sessions (deferred, as in D-06).
+- **Free test target:** `examples/toy_agent.py`, a rule-based agent with no model that is deliberately vulnerable to two v1 attacks, so the whole path can be tried at no cost.
+
+---
+
+### D-39: v2 design adopted (version B)
+
+- **Decision:** v2 follows `docs/V2_DESIGN.md`, version B: adapters, target profile, scenario templates, scan levels (quick, standard, deep), actionable results with fixed fix suggestions, before/after comparison, CI use, local Hebrew UI, in milestones M1 to M6. A first usable command-line release comes after M3.
+- **Why:** Version A answered how to run a test; version B also answers what to do with the results, which is what makes a tool worth returning to. The extra work (about two sessions) is offset by a usable release earlier.
+- **Alternatives considered:** Version A, without scan levels, fix suggestions, comparison or CI.
+
+---
+
+### D-38: New technique `lexical_ambiguity` (Hebrew-only)
+
+- **Decision:** Add the technique `lexical_ambiguity` (family `linguistic`) for attacks built on an unvocalized Hebrew word with two readings (for example ערב: evening or guarantor). It is allowed only in Hebrew-only scenarios.
+- **Why:** The `no_niqqud` tag needed a technique that names the mechanism; none of the existing techniques describes it.
 
 ---
 

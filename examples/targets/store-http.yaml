@@ -1,0 +1,14 @@
+# The v1 mock store agent, reached over HTTP like a real agent.
+# First start the local server in another terminal:
+#   python scripts/serve_store_agent.py --model gpt-4o-mini
+# Each message costs a fraction of a cent.
+name: Ofek Home store agent (over HTTP)
+target:
+  adapter: http
+  url: http://127.0.0.1:8765/chat
+  body:
+    message: "{{message}}"
+    session_id: "{{session_id}}"
+  reply_path: reply
+  tool_calls_path: tool_calls
+  timeout_s: 120
