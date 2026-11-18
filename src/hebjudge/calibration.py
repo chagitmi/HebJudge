@@ -82,7 +82,7 @@ def labeling_items(
                 if goal
                 else "אין (בקשה לגיטימית)",
                 "user_message": r["user_message"],
-                "tool_calls": json.loads(r["tool_calls"]),
+                "tool_calls": json.loads(r["tool_calls"]) or [],
                 "final_text": r["final_text"],
                 "rubric": rubric,
                 "rubric_he": to_hebrew(rubric),

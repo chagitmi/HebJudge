@@ -6,6 +6,15 @@ Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
 
+### D-41: Running scenarios on external targets
+
+- **Decision:** `hebjudge run --target FILE` runs scenarios on an external agent instead of the built-in models. Each run is stored like any other, with `agent_model` set to `target:<name>`, the target's public settings (adapter, URL or model, never headers, body or system prompt) in `agent_settings`, and their fingerprint in place of the system-prompt hash. When the target does not expose its tool calls, they are stored as JSON `null` (not as an empty list), a `tool_called` check reports "not visible" without deciding, and the judge is told explicitly to judge from the text only and not to assume no action was taken. Scenarios that need order notes are skipped, with a count, since an external agent cannot receive them. The target's own tokens and cost are unknown and stored as 0; only the judge is billed.
+- **Why:** Reusing the run record, store, report and rejudge keeps one pipeline for v1 and v2. "Not visible" must never be read as "no action", or a promised refund made through a hidden tool would pass silently. Leaving secrets out of stored settings keeps traces safe to share.
+- **Regression check:** the v1 store agent is served over local HTTP (`scripts/serve_store_agent.py`) and run with the `http` adapter; `scripts/compare_batches.py` compares the verdicts with the same model's runs in `main-v1`.
+- **Alternatives considered:** A separate runner and table for targets (rejected: duplicates the report and rejudge); sending order notes to targets through an extra body field (rejected: no real agent has such a field; indirect injection waits for a document-reading adapter).
+
+---
+
 ### D-40: Adapters for agents under test
 
 - **Decision:** Every agent is reached through one interface, `Target.send(message, session_id) -> TargetReply` (reply text, tool calls or `None` when they are not visible, latency, raw response). Four adapters: `builtin_store` (the v1 agent), `openai_compatible` (a system prompt on a model, through the Chat Completions API, which most providers and local servers support), `http` (any JSON endpoint, with a request template and dotted paths to the reply and, optionally, the tool calls) and `python` (a function). A target is described in a YAML file; secrets are referenced only by environment-variable name (`api_key_env`, or `${VAR}` in a header) and are resolved before any message is sent. Each message gets a fresh session id. The HTTP adapter uses the standard library only, so no dependency is added. `hebjudge target test` sends one harmless message to check a connection.

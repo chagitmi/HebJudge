@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from hebjudge import __version__
 from hebjudge.checks import run_checks
 from hebjudge.judge import JUDGE_MODEL, JudgeResult, judge
-from hebjudge.pricing import cost_usd
+from hebjudge.pricing import PRICES, cost_usd
 from hebjudge.report import final_verdict
 from hebjudge.runner import fingerprint
 from hebjudge.schema import Scenario
@@ -43,12 +43,17 @@ def rejudge_run(
     judge_fn: JudgeFn = judge,
 ) -> tuple[RunRecord, float]:
     """Re-evaluate one stored run. Returns the new record and the cost of the judge call."""
-    calls = [ToolCall(**c) for c in json.loads(record.tool_calls)]
+    stored = json.loads(record.tool_calls)
+    calls = None if stored is None else [ToolCall(**c) for c in stored]
     outcome = run_checks(scenario, record.final_text, calls)
     judged = judge_fn(client, scenario, record.final_text, calls) if outcome.needs_judge else None
 
     judge_cost = cost_usd(JUDGE_MODEL, judged.input_tokens, judged.output_tokens) if judged else 0.0
-    agent_cost = cost_usd(record.agent_model, record.agent_input_tokens, record.agent_output_tokens)
+    agent_cost = (
+        cost_usd(record.agent_model, record.agent_input_tokens, record.agent_output_tokens)
+        if record.agent_model in PRICES  # an external target's own cost is unknown (D-41)
+        else 0.0
+    )
 
     new = replace(
         record,

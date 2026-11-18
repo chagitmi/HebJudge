@@ -19,6 +19,7 @@ from hebjudge.schema import Scenario
 from hebjudge.target_agent.agent import MODEL_SETTINGS, TEMPERATURE, run_agent
 from hebjudge.target_agent.prompts import system_prompt
 from hebjudge.target_agent.tools import MockStore
+from hebjudge.targets import Target
 from hebjudge.trace_store import RunRecord, save_run
 
 # The development batch may be reused freely; any other batch name is protected (D-32).
@@ -84,6 +85,77 @@ def run_one(
     )
 
 
+TARGET_PREFIX = "target:"
+
+
+def target_label(target: Target) -> str:
+    """How an external target appears in the `agent_model` column and in reports."""
+    return f"{TARGET_PREFIX}{target.name}"
+
+
+def run_one_on_target(
+    target: Target,
+    judge_client: OpenAI,
+    scenario: Scenario,
+    batch: str = DEV_BATCH,
+    repeat_index: int = 0,
+    settings: dict | None = None,
+) -> RunRecord:
+    """Run one scenario on an external target through its adapter (D-41).
+
+    Only the judge is billed by HebJudge; the target's own cost and tokens are unknown and stored
+    as 0. Tool calls the target does not expose are stored as JSON `null`, not as an empty list.
+    """
+    if scenario.order_notes:
+        raise ValueError(
+            f"{scenario.id} needs order notes, which an external target cannot receive"
+        )
+    message = scenario.turns[0].content
+    reply = target.send(message, session_id=f"hj-{uuid.uuid4().hex[:12]}")
+    outcome = run_checks(scenario, reply.text, reply.tool_calls)
+    judged = (
+        judge(judge_client, scenario, reply.text, reply.tool_calls) if outcome.needs_judge else None
+    )
+    judge_cost = cost_usd(JUDGE_MODEL, judged.input_tokens, judged.output_tokens) if judged else 0.0
+    settings_json = json.dumps(settings or {}, ensure_ascii=False, sort_keys=True)
+    tool_calls = None if reply.tool_calls is None else [asdict(c) for c in reply.tool_calls]
+
+    return RunRecord(
+        run_id=uuid.uuid4().hex,
+        batch=batch,
+        repeat_index=repeat_index,
+        created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        hebjudge_version=__version__,
+        scenario_id=scenario.id,
+        pair_id=scenario.pair_id,
+        language=scenario.language,
+        category=scenario.category,
+        scenario_hash=fingerprint(scenario.model_dump_json()),
+        system_prompt_hash=fingerprint(settings_json),  # the target's settings, not a prompt
+        agent_model=target_label(target),
+        agent_model_version="",
+        agent_settings=settings_json,
+        user_message=message,
+        final_text=reply.text,
+        tool_calls=json.dumps(tool_calls, ensure_ascii=False),
+        agent_input_tokens=0,
+        agent_output_tokens=0,
+        agent_latency_s=round(reply.latency_s, 3),
+        agent_rounds=0,
+        hit_round_limit=False,
+        checks=json.dumps([asdict(r) for r in outcome.results], ensure_ascii=False),
+        attack_succeeded_in_code=outcome.attack_succeeded,
+        needs_judge=outcome.needs_judge,
+        judge_model_version=judged.model_version if judged else None,
+        judge_verdict=judged.verdict.verdict if judged else None,
+        judge_confidence=judged.verdict.confidence if judged else None,
+        judge_rationale=judged.verdict.rationale if judged else None,
+        judge_input_tokens=judged.input_tokens if judged else None,
+        judge_output_tokens=judged.output_tokens if judged else None,
+        cost_usd=round(judge_cost, 6),
+    )
+
+
 @dataclass
 class BatchSummary:
     completed: int = 0
@@ -111,7 +183,7 @@ def run_batch(
     database is never written concurrently. With `resume`, combinations already stored in the
     batch are skipped, so an interrupted batch can be continued.
     """
-    unknown = [m for m in models if m not in MODEL_SETTINGS]
+    unknown = [m for m in models if m not in MODEL_SETTINGS and not m.startswith(TARGET_PREFIX)]
     if unknown:
         raise ValueError(f"no settings defined for models: {unknown}")
     if workers < 1:

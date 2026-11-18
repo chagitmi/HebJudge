@@ -14,8 +14,12 @@ DEFAULT_REPORT_PATH = Path("data/runs/report.html")
 
 def _print_details(record: RunRecord) -> None:
     print(f"Saved run {record.run_id} for {record.scenario_id} on {record.agent_model_version}")
-    calls = [(c["name"], c["arguments"]) for c in json.loads(record.tool_calls)]
-    print(f"Tools:   {calls or 'none'}")
+    stored = json.loads(record.tool_calls)
+    if stored is None:
+        print("Tools:   not visible (only the reply text can be checked)")
+    else:
+        calls = [(c["name"], c["arguments"]) for c in stored]
+        print(f"Tools:   {calls or 'none'}")
     for check in json.loads(record.checks):
         print(f"Check:   {check['check_type']}: {check['detail']}")
     if record.judge_verdict is not None:
@@ -23,6 +27,15 @@ def _print_details(record: RunRecord) -> None:
             f"Judge:   {record.judge_verdict} ({record.judge_confidence}): {record.judge_rationale}"
         )
     print(f"Cost:    ${record.cost_usd:.6f}")
+
+
+def _public_settings(target_file) -> dict:
+    """The target settings stored with each run: what identifies the agent, never a secret."""
+    config = target_file.target.model_dump()
+    config.pop("headers", None)  # may hold tokens
+    config.pop("system_prompt", None)  # may be long or private; its file name is kept
+    config.pop("body", None)
+    return config
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -48,9 +61,46 @@ def _run(args: argparse.Namespace) -> int:
     if args.workers < 1:
         print("Error: --workers must be at least 1")
         return 1
-    total = len(scenarios) * len(args.models) * args.repeats
+
+    load_dotenv()
+    models = args.models
+    run_fn = None
+    if args.target:
+        from hebjudge.runner import run_one_on_target, target_label
+        from hebjudge.targets import TargetError, build_target, load_target_file
+
+        try:
+            target_file = load_target_file(args.target)
+            target = build_target(target_file)
+        except (ValueError, FileNotFoundError, TargetError) as exc:
+            print(f"Error: {exc}")
+            return 1
+        with_notes = [s for s in scenarios if s.order_notes]
+        if with_notes:
+            print(
+                f"Skipping {len(with_notes)} scenarios with order notes "
+                "(an external target cannot receive them)"
+            )
+            scenarios = [s for s in scenarios if not s.order_notes]
+        if not scenarios:
+            print("Error: no scenarios left to run")
+            return 1
+        models = [target_label(target)]
+        settings = {"name": target_file.name, **_public_settings(target_file)}
+
+        def run_fn(client, scenario, model, batch, repeat_index):
+            return run_one_on_target(
+                target,
+                client,
+                scenario,
+                batch=batch,
+                repeat_index=repeat_index,
+                settings=settings,
+            )
+
+    total = len(scenarios) * len(models) * args.repeats
     print(
-        f"Batch '{args.batch}': {len(scenarios)} scenarios x {len(args.models)} models "
+        f"Batch '{args.batch}': {len(scenarios)} scenarios x {len(models)} models "
         f"x {args.repeats} repeats = {total} runs, {args.workers} in parallel"
     )
 
@@ -68,13 +118,13 @@ def _run(args: argparse.Namespace) -> int:
     def on_error(index: int, total: int, scenario, model: str, exc: Exception) -> None:
         print(f"[{index}/{total}] {scenario.id} | {model} | ERROR: {exc}")
 
-    load_dotenv()
+    extra = {"run_fn": run_fn} if run_fn is not None else {}
     try:
         with connect(args.db) as conn:
             summary = run_batch(
                 OpenAI(max_retries=6),  # the SDK backs off and retries rate limits and timeouts
                 scenarios,
-                args.models,
+                models,
                 args.repeats,
                 args.batch,
                 conn,
@@ -82,6 +132,7 @@ def _run(args: argparse.Namespace) -> int:
                 on_error=on_error,
                 workers=args.workers,
                 resume=args.resume,
+                **extra,
             )
     except ValueError as exc:
         print(f"Error: {exc}")
@@ -327,6 +378,9 @@ def main(argv: list[str] | None = None) -> int:
     run_parser = sub.add_parser("run", help="Run scenarios end to end and save the traces")
     run_parser.add_argument("scenarios", nargs="+", help="Scenario YAML files or directories")
     run_parser.add_argument("--models", nargs="+", default=["gpt-6-luna"])
+    run_parser.add_argument(
+        "--target", help="Run on an external agent from a target YAML file instead of --models"
+    )
     run_parser.add_argument("--repeats", type=int, default=1)
     run_parser.add_argument("--batch", default="dev", help="Label stored with every run (D-26)")
     run_parser.add_argument("--workers", type=int, default=4, help="Runs executed in parallel")

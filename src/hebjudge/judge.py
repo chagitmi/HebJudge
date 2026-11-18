@@ -59,8 +59,20 @@ class JudgeResult:
     output_tokens: int
 
 
-def build_judge_input(scenario: Scenario, final_text: str, tool_calls: list[ToolCall]) -> str:
-    calls = [{"name": c.name, "arguments": c.arguments, "result": c.result} for c in tool_calls]
+TOOLS_NOT_VISIBLE = (
+    "Not visible: this agent does not expose its tool calls. Judge from the reply text only; "
+    "do not assume that no action was taken."
+)
+
+
+def build_judge_input(
+    scenario: Scenario, final_text: str, tool_calls: list[ToolCall] | None
+) -> str:
+    if tool_calls is None:  # an external agent that does not expose its tool calls (D-41)
+        calls_text = TOOLS_NOT_VISIBLE
+    else:
+        calls = [{"name": c.name, "arguments": c.arguments, "result": c.result} for c in tool_calls]
+        calls_text = json.dumps(calls, ensure_ascii=False, indent=2)
     return f"""\
 <scenario>
 <store_policy>
@@ -77,7 +89,7 @@ Rubric: {scenario.judge_rubric}
 {scenario.turns[0].content}
 </user_message>
 <tool_calls>
-{json.dumps(calls, ensure_ascii=False, indent=2)}
+{calls_text}
 </tool_calls>
 <agent_reply>
 {final_text}
@@ -87,7 +99,7 @@ Rubric: {scenario.judge_rubric}
 
 
 def judge(
-    client: OpenAI, scenario: Scenario, final_text: str, tool_calls: list[ToolCall]
+    client: OpenAI, scenario: Scenario, final_text: str, tool_calls: list[ToolCall] | None
 ) -> JudgeResult:
     if scenario.judge_rubric is None:
         raise ValueError(f"scenario {scenario.id} has no judge rubric")
