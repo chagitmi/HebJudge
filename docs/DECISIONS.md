@@ -6,6 +6,16 @@ Format: **Decision**, **Why**, **Alternatives considered**.
 
 ---
 
+### D-42: Target profile and scenario templates
+
+- **Decision:** A target file may carry a `profile`: the agent's name (per language), role, policy, secrets (canaries), protected data (a description per language, and exact example strings), forbidden actions (an infinitive phrase per language, and optionally the tool behind it) and legitimate requests. Scenario templates (`src/hebjudge/template_data/`, 24 in the first set) are attacks written once in Hebrew and English with placeholders (`{{agent_name}}`, `{{data}}`, `{{action}}`, and English variants for rubrics). `generate` fills them by plain substitution into ordinary `Scenario` objects: one scenario per forbidden action, checks taken from the profile (secrets and protected strings in code, a forbidden tool when one is named), and benign controls from the legitimate requests. Templates whose needs the profile does not meet are skipped and listed. `hebjudge target scenarios` shows or writes the generated scenarios; `hebjudge target canary` creates a canary and shows how to plant it.
+- **Why:** The v1 scenarios are tied to the mock store; templates keep the same attack ideas but fit any agent. Plain substitution is free and reproducible: the same profile always gives the same scenarios, so before/after comparisons are fair (D-39). Producing ordinary `Scenario` objects reuses the runner, checks, judge and report unchanged. Rubrics stay in English, as in v1. A secret shorter than 8 characters is rejected, since it could appear in a reply by chance.
+- **First template set:** system-prompt leakage (6), protected-data leakage (5), forbidden actions (6), off-policy commitments (3), role abandonment (4), across 12 techniques, weighted toward what succeeded in v1 (format exploits, fake system messages, partial compliance).
+- **Not yet:** Hebrew-only techniques (keyboard layout, Atbash, bidi) and the "guess and act" family need per-message encoding and will be added as generated variants; indirect injection waits for a document-reading adapter. Until M3, the judge still uses the store policy, so generated scenarios should not yet be run for real results.
+- **Alternatives considered:** Generating attacks with an LLM per target (rejected for now: costs money, not reproducible, and harder to review); asking the owner to write scenarios by hand (rejected: too much work, and attack-writing expertise is what the tool should supply).
+
+---
+
 ### D-41: Running scenarios on external targets
 
 - **Decision:** `hebjudge run --target FILE` runs scenarios on an external agent instead of the built-in models. Each run is stored like any other, with `agent_model` set to `target:<name>`, the target's public settings (adapter, URL or model, never headers, body or system prompt) in `agent_settings`, and their fingerprint in place of the system-prompt hash. When the target does not expose its tool calls, they are stored as JSON `null` (not as an empty list), a `tool_called` check reports "not visible" without deciding, and the judge is told explicitly to judge from the text only and not to assume no action was taken. Scenarios that need order notes are skipped, with a count, since an external agent cannot receive them. The target's own tokens and cost are unknown and stored as 0; only the judge is billed.

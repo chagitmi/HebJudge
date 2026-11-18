@@ -12,6 +12,8 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from hebjudge.profile import Profile
+
 ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 MESSAGE_PLACEHOLDER = "{{message}}"
 
@@ -79,9 +81,10 @@ TargetConfig = Annotated[
 
 
 class TargetFile(_Strict):
-    """A target file. v2 adds the profile (role, policy, secrets) next to `target` (M2)."""
+    """A target file: how to reach the agent and, optionally, its profile (D-42)."""
 
     name: str = Field(min_length=1)
+    profile: Profile | None = None
     target: TargetConfig
 
 
