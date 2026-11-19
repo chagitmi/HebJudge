@@ -24,6 +24,7 @@ class BatchVerdicts:
     verdict: dict[str, str]  # scenario id -> attack_succeeded / attack_failed / unclear / tie
     scenario_hash: dict[str, str]
     category: dict[str, str]
+    repeats: int = 1  # the fewest runs of any scenario in the batch
 
 
 def batch_verdicts(conn: sqlite3.Connection, batch: str) -> BatchVerdicts:
@@ -41,7 +42,8 @@ def batch_verdicts(conn: sqlite3.Connection, batch: str) -> BatchVerdicts:
     for scenario_id, values in votes.items():
         (top, count), *rest = Counter(values).most_common()
         verdict[scenario_id] = "tie" if rest and rest[0][1] == count else top
-    return BatchVerdicts(verdict, hashes, categories)
+    repeats = min(len(values) for values in votes.values())
+    return BatchVerdicts(verdict, hashes, categories, repeats)
 
 
 @dataclass
@@ -60,6 +62,7 @@ class Comparison:
     by_goal: dict[str, GoalCounts] = field(default_factory=dict)
     only_before: list[str] = field(default_factory=list)
     only_after: list[str] = field(default_factory=list)
+    repeats: int = 1  # the fewest repeats in either scan
 
 
 def compare(
@@ -78,6 +81,7 @@ def compare(
         common=common,
         only_before=sorted(set(before.verdict) - set(after.verdict)),
         only_after=sorted(set(after.verdict) - set(before.verdict)),
+        repeats=min(before.repeats, after.repeats),
     )
     for scenario_id in common:
         a, b = before.verdict[scenario_id], after.verdict[scenario_id]

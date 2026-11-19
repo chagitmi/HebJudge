@@ -30,12 +30,12 @@ def _print_details(record: RunRecord) -> None:
 
 
 def _public_settings(target_file) -> dict:
-    """The target settings stored with each run: what identifies the agent, never a secret."""
-    config = target_file.target.model_dump()
-    config.pop("headers", None)  # may hold tokens
-    config.pop("system_prompt", None)  # may be long or private; its file name is kept
-    config.pop("body", None)
-    return config
+    """The target settings stored with each run (see scan.public_settings)."""
+    from hebjudge.scan import public_settings
+
+    settings = public_settings(target_file)
+    settings.pop("name")
+    return settings
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -450,13 +450,11 @@ def _scan(args: argparse.Namespace) -> int:
     from datetime import UTC, datetime
 
     from dotenv import load_dotenv
-    from openai import OpenAI
 
     from hebjudge import scan
     from hebjudge.fixes import suggest
     from hebjudge.report import final_verdict, verdict_label
-    from hebjudge.runner import run_batch, run_one_on_target, target_label
-    from hebjudge.targets import TargetError, build_target, load_target_file
+    from hebjudge.targets import TargetError, load_target_file
     from hebjudge.templates import load_templates
 
     load_dotenv()
@@ -535,30 +533,7 @@ def _scan(args: argparse.Namespace) -> int:
         print("Cancelled; nothing was sent.")
         return 1
 
-    try:
-        target = build_target(target_file)
-    except (ValueError, TargetError) as exc:
-        print(f"Error: {exc}")
-        return 1
-    scan.save_scenarios(scenarios, Path(args.db).parent / "scans" / batch)
-    settings = {"name": target_file.name, **_public_settings(target_file)}
-    policy = scan.agent_policy(profile)
-
-    def run_on_target(client, scenario, model, batch, repeat_index):
-        return run_one_on_target(
-            target,
-            client,
-            scenario,
-            batch=batch,
-            repeat_index=repeat_index,
-            settings=settings,
-            policy=policy,
-        )
-
-    records: list[RunRecord] = []
-
     def on_result(index: int, total: int, record: RunRecord) -> None:
-        records.append(record)
         _, decided_by = final_verdict(asdict(record))
         print(
             f"[{index}/{total}] {record.scenario_id} | {verdict_label(asdict(record))} "
@@ -568,37 +543,30 @@ def _scan(args: argparse.Namespace) -> int:
     def on_error(index: int, total: int, scenario, model: str, exc: Exception) -> None:
         print(f"[{index}/{total}] {scenario.id} | ERROR: {exc}")
 
-    workers = args.workers or (1 if target_file.target.adapter == "http" else 4)
-    print(f"\nBatch '{batch}', {workers} at a time")
+    print(f"\nBatch '{batch}'")
     try:
-        with connect(args.db) as conn:
-            summary = run_batch(
-                OpenAI(max_retries=6),
-                scenarios,
-                [target_label(target)],
-                level.repeats,
-                batch,
-                conn,
-                run_fn=scan.with_budget(run_on_target, args.max_cost),
-                on_result=on_result,
-                on_error=on_error,
-                workers=workers,
-            )
-    except ValueError as exc:
+        outcome = scan.execute_scan(
+            target_file,
+            scenarios,
+            level,
+            batch,
+            args.db,
+            max_cost=args.max_cost,
+            workers=args.workers,
+            on_result=on_result,
+            on_error=on_error,
+        )
+    except (ValueError, TargetError) as exc:
         print(f"Error: {exc}")
         return 1
+    records = outcome.records
 
     print("\nResults (attack succeeded / decided runs):")
     for result in scan.summarize(records, scenarios):
         unclear = f", {result.unclear} unclear" if result.unclear else ""
         print(f"  {result.label}: {result.failed} of {result.total}{unclear}")
-    by_id = {s.id: s for s in scenarios}
-    failures = [
-        (r.scenario_id, by_id[r.scenario_id].attacker_goal, by_id[r.scenario_id].technique)
-        for r in records
-        if final_verdict(asdict(r))[0] == "attack_succeeded"
-    ]
-    fixes = suggest(failures)
+
+    fixes = suggest(scan.failures(records, scenarios))
     if fixes:
         print("\nWhat to change in your agent's instructions (suggestions):")
         for number, fix in enumerate(fixes, start=1):
@@ -609,22 +577,19 @@ def _scan(args: argparse.Namespace) -> int:
         print("\nNo failures at this level. A deeper level tries more attacks.")
 
     print(
-        f"\nDone: {summary.completed} completed, {summary.failed} failed, "
-        f"cost ${summary.cost_usd:.4f} (judge)"
+        f"\nDone: {outcome.completed} completed, {outcome.failed} failed, "
+        f"cost ${outcome.cost_usd:.4f} (judge)"
     )
     print(f"Details: hebjudge report --batch {batch} --out reports/{batch}.html")
     print(f"After a fix: scan again, then hebjudge compare {batch} <new batch>")
 
-    attacks = [r for r in records if r.category != "benign_control"]
-    decided = [r for r in attacks if final_verdict(asdict(r))[0] != "unclear"]
-    if args.fail_above is not None and decided:
-        rate = 100 * sum(final_verdict(asdict(r))[0] == "attack_succeeded" for r in decided)
-        rate /= len(decided)
+    rate = scan.attack_success_rate(records)
+    if args.fail_above is not None and rate is not None:
         if rate > args.fail_above:
             print(f"FAILED: attack success rate {rate:.0f}% is above {args.fail_above:g}%")
             return 2
         print(f"PASSED: attack success rate {rate:.0f}% is at most {args.fail_above:g}%")
-    return 0 if summary.failed == 0 else 1
+    return 0 if outcome.failed == 0 else 1
 
 
 def _compare(args: argparse.Namespace) -> int:
@@ -676,7 +641,22 @@ def _compare(args: argparse.Namespace) -> int:
             f"\nNot compared: {len(result.only_before)} only before, "
             f"{len(result.only_after)} only after"
         )
-    print("\nWith one repeat, a single change can be chance; a deep scan (3 repeats) is firmer.")
+    if result.repeats == 1:
+        print(
+            "\nWith one repeat, a single change can be chance; a deep scan (3 repeats) is firmer."
+        )
+    return 0
+
+
+def _ui(args: argparse.Namespace) -> int:
+    """Open the local UI in the browser (D-45)."""
+    from hebjudge.ui.server import serve
+
+    try:
+        serve(port=args.port, db_path=args.db, open_browser=not args.no_browser)
+    except OSError as exc:
+        print(f"Error: could not start on port {args.port}: {exc}. Try --port 8771")
+        return 1
     return 0
 
 
@@ -796,6 +776,11 @@ def main(argv: list[str] | None = None) -> int:
     compare_parser.add_argument("after", help="Batch of the later scan")
     compare_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
+    ui_parser = sub.add_parser("ui", help="Open the HebJudge interface in your browser (v2)")
+    ui_parser.add_argument("--port", type=int, default=8770)
+    ui_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser")
+    ui_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
@@ -813,6 +798,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scan(args)
     if args.command == "compare":
         return _compare(args)
+    if args.command == "ui":
+        return _ui(args)
     if args.command == "target" and args.target_command == "test":
         return _target_test(args)
     if args.command == "target" and args.target_command == "canary":

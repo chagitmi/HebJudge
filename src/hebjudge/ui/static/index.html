@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="hebjudge-token" content="__HEBJUDGE_TOKEN__">
+<meta name="color-scheme" content="dark">
+<title>HebJudge</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="bench">
+  <a class="mark" href="#/agents" aria-label="HebJudge, דף הבית">
+    <svg class="mark-icon" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="26" cy="26" r="18.5" fill="none" stroke="currentColor" stroke-width="5.5"/>
+      <circle cx="26" cy="26" r="14.2" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+      <path d="M15.2 17.6a11.6 11.6 0 0 1 4.6-4.4" fill="none" stroke="#e9eef0" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+      <path d="M38.6 40.4l3.8-3.8 4.2 4.2-3.8 3.8z" fill="currentColor"/>
+      <path d="M44.8 42.6l3.6-3.6 11 11a3.4 3.4 0 0 1 0 4.8l-.4.4a3.4 3.4 0 0 1-4.8 0z" fill="currentColor"/>
+      <text x="26.5" y="33.2" text-anchor="middle" font-family="Plex, sans-serif" font-weight="700" font-size="19" fill="#e9eef0">א</text>
+    </svg>
+    <span class="mark-word"><span class="heb">Heb</span><span class="judge">Judge</span></span>
+  </a>
+  <nav aria-label="שלבי העבודה">
+    <ol class="steps">
+      <li><a href="#/agents" data-nav="agents"><span class="step-n">1</span>סוכן</a></li>
+      <li><a href="#/scan" data-nav="scan"><span class="step-n">2</span>סריקה</a></li>
+      <li><a href="#/results" data-nav="results"><span class="step-n">3</span>תוצאות</a></li>
+      <li><a href="#/compare" data-nav="compare"><span class="step-n">4</span>לפני ואחרי</a></li>
+    </ol>
+  </nav>
+  <p class="bench-meta">רץ במחשב שלך בלבד<br><bdi>v__HEBJUDGE_VERSION__</bdi></p>
+</header>
+<main id="view" tabindex="-1"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body>
+</html>

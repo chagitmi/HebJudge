@@ -188,6 +188,7 @@ GOAL_LABELS = {
 @dataclass
 class GoalResult:
     label: str
+    goal: str = ""
     failed: int = 0  # the attack succeeded
     total: int = 0  # decided runs
     unclear: int = 0
@@ -196,10 +197,11 @@ class GoalResult:
 def summarize(records: Sequence[RunRecord], scenarios: Sequence[Scenario]) -> list[GoalResult]:
     """Results per attacker goal, then over-refusal on legitimate requests."""
     goal_of = {s.id: s.attacker_goal or "benign" for s in scenarios}
-    results = {goal: GoalResult(label) for goal, label in GOAL_LABELS.items()}
-    results["benign"] = GoalResult("Refuses legitimate requests")
+    results = {goal: GoalResult(label, goal) for goal, label in GOAL_LABELS.items()}
+    results["benign"] = GoalResult("Refuses legitimate requests", "benign")
     for record in records:
-        result = results.setdefault(goal_of.get(record.scenario_id, "other"), GoalResult("Other"))
+        goal = goal_of.get(record.scenario_id, "other")
+        result = results.setdefault(goal, GoalResult("Other", goal))
         verdict, _ = final_verdict(asdict(record))
         if verdict == "unclear":
             result.unclear += 1
@@ -212,3 +214,144 @@ def summarize(records: Sequence[RunRecord], scenarios: Sequence[Scenario]) -> li
 
 def agent_policy(profile: Profile) -> AgentPolicy:
     return AgentPolicy(role=profile.role, policy=profile.policy)
+
+
+GOAL_LABELS_HE = {
+    "leak_system_prompt": "חושף את ההוראות או הסודות שלו",
+    "leak_protected_data": "מדליף מידע מוגן",
+    "forbidden_action": "מבצע פעולות אסורות",
+    "off_policy_commitment": "מתחייב לדברים מחוץ למדיניות",
+    "role_abandonment": "יוצא מהתפקיד שלו",
+    "benign": "מסרב לבקשות לגיטימיות",
+}
+
+
+def public_settings(target_file: TargetFile) -> dict:
+    """The target settings stored with each run: what identifies the agent, never a secret."""
+    config = target_file.target.model_dump()
+    config.pop("headers", None)  # may hold tokens
+    config.pop("system_prompt", None)  # may be long or private; its file name is kept
+    config.pop("body", None)
+    return {"name": target_file.name, **config}
+
+
+def failures(records: Sequence[RunRecord], scenarios: Sequence[Scenario]) -> list[tuple]:
+    """(scenario id, attacker goal, technique) for every run where the attack succeeded."""
+    by_id = {s.id: s for s in scenarios}
+    result = []
+    for record in records:
+        scenario = by_id.get(record.scenario_id)
+        if scenario and final_verdict(asdict(record))[0] == "attack_succeeded":
+            result.append((record.scenario_id, scenario.attacker_goal, scenario.technique))
+    return result
+
+
+def attack_success_rate(records: Sequence[RunRecord]) -> float | None:
+    """Percent of decided attack runs where the attack succeeded; None if there are none."""
+    decided = [
+        final_verdict(asdict(r))[0]
+        for r in records
+        if r.category != "benign_control" and final_verdict(asdict(r))[0] != "unclear"
+    ]
+    if not decided:
+        return None
+    return 100 * decided.count("attack_succeeded") / len(decided)
+
+
+class ScanStopped(RuntimeError):
+    pass
+
+
+@dataclass
+class ScanOutcome:
+    batch: str
+    records: list[RunRecord]
+    completed: int
+    failed: int
+    cost_usd: float
+    stopped: bool
+
+
+def execute_scan(
+    target_file: TargetFile,
+    scenarios: Sequence[Scenario],
+    level: Level,
+    batch: str,
+    db_path: str | Path,
+    *,
+    max_cost: float | None = None,
+    workers: int | None = None,
+    on_result: Callable[[int, int, RunRecord], None] | None = None,
+    on_error: Callable[[int, int, Scenario, str, Exception], None] | None = None,
+    stop_event: threading.Event | None = None,
+    judge_client=None,
+) -> ScanOutcome:
+    """Run a scan that has been planned and confirmed. Shared by the CLI and the UI.
+
+    Raises ValueError or TargetError before anything is sent if the target cannot be built.
+    """
+    from openai import OpenAI
+
+    from hebjudge.runner import run_batch, run_one_on_target, target_label
+    from hebjudge.targets import build_target
+    from hebjudge.trace_store import connect
+
+    if target_file.profile is None:
+        raise ValueError("the target file has no profile")
+    target = build_target(target_file)
+    save_scenarios(scenarios, Path(db_path).parent / "scans" / batch)
+    settings = public_settings(target_file)
+    policy = agent_policy(target_file.profile)
+
+    def run_on_target(client, scenario, model, batch, repeat_index):
+        if stop_event is not None and stop_event.is_set():
+            raise ScanStopped("stopped by the user; run not started")
+        return run_one_on_target(
+            target,
+            client,
+            scenario,
+            batch=batch,
+            repeat_index=repeat_index,
+            settings=settings,
+            policy=policy,
+        )
+
+    records: list[RunRecord] = []
+
+    def collect(index: int, total: int, record: RunRecord) -> None:
+        records.append(record)
+        if on_result:
+            on_result(index, total, record)
+
+    workers = workers or (1 if target_file.target.adapter == "http" else 4)
+    with connect(db_path) as conn:
+        summary = run_batch(
+            judge_client or OpenAI(max_retries=6),
+            scenarios,
+            [target_label(target)],
+            level.repeats,
+            batch,
+            conn,
+            run_fn=with_budget(run_on_target, max_cost),
+            on_result=collect,
+            on_error=on_error,
+            workers=workers,
+        )
+    stopped = stop_event is not None and stop_event.is_set()
+    return ScanOutcome(batch, records, summary.completed, summary.failed, summary.cost_usd, stopped)
+
+
+def load_scan(db_path: str | Path, batch: str) -> tuple[list[RunRecord], list[Scenario]]:
+    """A finished scan's runs and the exact scenarios it sent."""
+    from hebjudge.schema import load_scenarios
+    from hebjudge.trace_store import connect, record_from_row
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM runs WHERE batch = ? ORDER BY created_at", (batch,)
+        ).fetchall()
+    if not rows:
+        raise ValueError(f"no runs found in batch '{batch}'")
+    directory = Path(db_path).parent / "scans" / batch
+    scenarios = load_scenarios([directory]) if directory.is_dir() else []
+    return [record_from_row(r) for r in rows], scenarios
