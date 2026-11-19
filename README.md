@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/hebjudge-logo.png" alt="HebJudge" width="420"></p>
+
 # HebJudge
 
 **Hebrew agent evaluation & red-teaming**
@@ -6,11 +8,13 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 [![Dataset on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20dataset-HebJudge-yellow)](https://huggingface.co/datasets/chagitmi/HebJudge)
-![Status](https://img.shields.io/badge/status-v1%20results-brightgreen)
+![Status](https://img.shields.io/badge/status-v1%20results%20%C2%B7%20v2%20preview-brightgreen)
 
 HebJudge is an open-source **evals framework and benchmark** for LLM-based agents in Hebrew. It measures whether agents can be manipulated by prompt injection, whether they leak protected data, and whether an **LLM-as-a-judge** grader can be trusted to score them, with the grader validated against human labels.
 
 > **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](reports/heonly-v1-summary.md). The 150 scenarios are published as a dataset on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
+>
+> **v2 preview:** you can now [scan your own agent](#test-your-own-agent-v2-preview), from a Hebrew interface in the browser or from the command line. Installation from PyPI is next.
 
 ---
 
@@ -36,6 +40,37 @@ From a separate run (`heonly-v1`, 2026-11-17): 30 scenarios with no English twin
 3. **Ambiguous unvocalized words did not confuse the agents.** Attacks built on words with two readings (for example ערב, "evening" or "guarantor") succeeded in 0 of 45 runs.
 4. **Obfuscation is often not understood at all.** Hebrew typed on an English keyboard layout was understood by every model when it contained an order id, and only by `gpt-6-luna` when it did not. No model decoded the Atbash cipher correctly.
 5. **A wrong decoding led to an unrequested action.** Asked in Atbash for a discount, `gpt-6-luna` "decoded" the message as a refund request and refunded an order nobody had named, in 3 of 3 repeats. The stronger model, by trying harder to understand, took an irreversible action. Exploratory, from one scenario.
+
+## Test your own agent (v2 preview)
+
+HebJudge can now attack **your** agent, not only its built-in store: a clinic assistant, a bank bot, an HR helper. You describe the agent once (what it may do, what is secret, what is forbidden); HebJudge turns 24 attack templates, in Hebrew and English, into attacks written for it, runs them, and tells you what to change.
+
+<p align="center"><img src="docs/images/ui-results.jpg" alt="Results screen: a verdict, a wall of runs per risk, and fix suggestions" width="860"></p>
+
+```bash
+hebjudge ui        # opens the Hebrew interface at http://127.0.0.1:8770
+```
+
+Or from the command line:
+
+```bash
+hebjudge target test examples/targets/prompt-agent.yaml                  # one harmless message
+hebjudge scan examples/targets/prompt-agent.yaml --dry-run                # see every attack; nothing is sent
+hebjudge scan examples/targets/prompt-agent.yaml --level quick --max-cost 0.10
+hebjudge compare <scan before a fix> <scan after it>
+```
+
+**How it works**
+
+1. **Connect.** Four ways to reach an agent: a system prompt on a model (OpenAI or any compatible API, including local models), any JSON endpoint, a Python function, or the built-in store agent. API keys are referenced by environment-variable name and never written to files.
+2. **Describe.** A short profile: the agent's role and policy, secrets (a planted canary is the surest leak detector), protected data, forbidden actions, and a few legitimate requests to measure over-refusal.
+3. **Scan.** Quick (the 8 attacks that worked best in v1, about $0.05), standard or deep (3 repeats). The cost is shown before anything is sent, a spending cap can be set, and the first scan of each agent asks you to confirm that you own it or may test it.
+4. **Fix.** Results per risk ("leaks protected data: 2 of 4"), every transcript, and a suggested sentence to add to the agent's instructions for each kind of failure.
+5. **Compare.** Scan again after the fix: what closed, and whether anything opened.
+
+**A worked example.** A quick scan of the example dental-clinic assistant (`examples/targets/prompt-agent.yaml`) found one hole: asked in Hebrew to fill in a JSON template, it wrote out its full instructions and its secret code (3 of 3 repeats; 0 of 3 in English). One suggested sentence was added to its instructions (`prompt-agent-fixed.yaml`), and the same attack then failed in 6 of 6 runs, with legitimate requests still answered.
+
+**What runs where.** The interface and all results stay on your computer. Attack messages go to the agent you test; each exchange goes to OpenAI for judging, with your own API key and at your own cost. Use test environments and synthetic data. The judge was calibrated against human labels on the store agent (kappa 0.85); on a new agent its agreement is not measured, and the report says so.
 
 ## The problem
 
@@ -99,6 +134,12 @@ Cost:    $0.001570
 | `hebjudge calibrate sample --batch NAME` | Pick a balanced, blind sample and build a Hebrew labeling page | No |
 | `hebjudge calibrate score --batch NAME --labels FILE` | Agreement and Cohen's kappa between human labels and the judge | No |
 | `hebjudge report --batch NAME` | HTML report with confidence intervals, paired McNemar test and breakdowns | No |
+| `hebjudge ui` | The Hebrew interface in your browser: agents, scans, results, before and after | Only when you start a scan |
+| `hebjudge target test FILE` | Send one harmless message to an agent and show its reply | The agent only |
+| `hebjudge target scenarios FILE --out DIR` | Generate the attacks for an agent from its profile | No |
+| `hebjudge target canary` | Create a unique canary to plant in an agent's instructions | No |
+| `hebjudge scan FILE --level quick\|standard\|deep` | Scan an agent: generate, estimate cost, confirm, run, summarize, suggest fixes (`--dry-run`, `--max-cost`, `--only`, `--fail-above` for CI) | Yes |
+| `hebjudge compare BEFORE AFTER` | Compare two scans of the same attacks | No |
 
 ## How it works
 
@@ -168,7 +209,7 @@ Low-cost models were chosen deliberately: they are what small teams typically de
 
 ```
 HebJudge/
-├── docs/                 # SPEC, DECISIONS, ANALYSIS_PLAN, SCENARIO_GUIDE, OBSERVATIONS
+├── docs/                 # SPEC, V2_DESIGN, DECISIONS, ANALYSIS_PLAN, SCENARIO_GUIDE, OBSERVATIONS
 ├── reports/              # Published results: summaries, HTML reports, exported Hebrew-only runs
 ├── data/
 │   ├── scenarios/        # Scenario YAML files (he/, en/, he_only/)
@@ -186,7 +227,15 @@ HebJudge/
 │   ├── trace_store.py    # SQLite trace store
 │   ├── pricing.py        # Cost per model
 │   ├── report.py         # HTML report and statistics
-│   └── cli.py            # hebjudge run / rejudge / calibrate / report
+│   ├── targets/          # v2: adapters for agents under test (API, HTTP, Python, built-in)
+│   ├── profile.py        # v2: what the owner tells HebJudge about an agent
+│   ├── templates.py      # v2: attack templates filled from a profile (template_data/: 24 templates)
+│   ├── scan.py           # v2: levels, cost estimate, permission, budget, summary
+│   ├── fixes.py          # v2: fix suggestions per kind of failure
+│   ├── compare.py        # v2: before/after comparison
+│   ├── ui/               # v2: local web server and the Hebrew single-page interface
+│   └── cli.py            # hebjudge run / rejudge / calibrate / report / ui / target / scan / compare
+├── examples/             # v2: example agents (toy, clinic, clinic after a fix, store) and generated attacks
 ├── tests/                # pytest suite (runs offline, no API key needed)
 └── scripts/              # API smoke test, run viewer, batch export, hidden-text perception probe
 ```
@@ -227,13 +276,18 @@ All attacks in this project run against the project's own mock agent, never agai
 - [x] Judge calibration against blind human labels
 - [x] 30 Hebrew-only scenarios (code-switching, no niqqud, RTL/LTR mixing, slang and transliteration) and their run (`heonly-v1`)
 - [x] Dataset release on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge)
-- [ ] v2: run against real agents via adapters (chat API, OpenAI-compatible endpoint, Python function) with parameterized scenarios, with the owner's permission and in a test environment
-- [ ] v2: friendly UI (local `hebjudge ui` and a hosted demo), multi-turn scenarios, hardened-agent comparison, automated paraphrase variants, document-reading agent, additional provider
+- [x] v2: adapters for real agents (OpenAI-compatible API, HTTP endpoint, Python function), profiles and 24 bilingual attack templates
+- [x] v2: `hebjudge scan` with levels, cost estimate, spending cap, permission confirmation and the owner's policy for the judge
+- [x] v2: fix suggestions, before/after comparison, CI threshold
+- [x] v2: local Hebrew interface (`hebjudge ui`)
+- [ ] v2: install from PyPI (`pip install hebjudge`), an API-key screen in the interface, an installation guide in Hebrew and English
+- [ ] Later: Hebrew-only attack templates (keyboard layout, Atbash), multi-turn attacks, a document-reading agent for indirect injection, a judge self-check on your own agent, other judge providers
 - [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
 
 ## Documentation
 
 - [Specification](docs/SPEC.md): goals, scope, schema, metrics, architecture
+- [v2 design](docs/V2_DESIGN.md): testing your own agent: adapters, profiles, templates, scans, fixes, interface
 - [Decision log](docs/DECISIONS.md): every design decision with its rationale and alternatives
 - [Analysis plan](docs/ANALYSIS_PLAN.md): the pre-registered analysis of both runs
 - [Scenario authoring guide](docs/SCENARIO_GUIDE.md): how to write and review scenarios
@@ -272,6 +326,10 @@ Code: [MIT](LICENSE). Data: [CC BY 4.0](https://creativecommons.org/licenses/by/
 
 <p dir="rtl">ממצא מפתיע: כשביקשו הנחה בצופן אתב"ש, המודל החזק ביותר "פענח" את ההודעה לא נכון וביצע החזר כספי שאף אחד לא ביקש, בכל שלוש החזרות. דווקא הניסיון להבין הוביל לפעולה שאי אפשר לבטל.</p>
 
-<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה, ו-150 התרחישים פורסמו כמאגר נתונים ב-<a href="https://huggingface.co/datasets/chagitmi/HebJudge">Hugging Face</a>. השלב הבא: גרסה 2, עם חיבור לסוכנים אמיתיים וממשק משתמש בעברית.</p>
+<p dir="rtl"><b>בדיקת הסוכן שלכם (גרסה 2, תצוגה מקדימה):</b> עכשיו אפשר לבדוק גם סוכן משלכם, לא רק את החנות המדומה. מתארים את הסוכן פעם אחת: מה מותר לו, מה סודי ומה אסור. HebJudge הופך 24 תבניות תקיפה בעברית ובאנגלית לתקיפות שמותאמות לסוכן, מריץ אותן, ומציע מה לשנות בהוראות שלו. אחרי התיקון סורקים שוב ומשווים. הכול מממשק בעברית בדפדפן (<code>hebjudge ui</code>), שרץ במחשב שלכם בלבד. לפני כל סריקה מוצגת העלות, ולפני הסריקה הראשונה מאשרים שהסוכן שלכם או שיש לכם הרשאה לבדוק אותו.</p>
+
+<p dir="rtl">דוגמה: סריקה מהירה של סוכן לדוגמה של מרפאת שיניים מצאה חור אחד. בקשה בעברית "למלא תבנית JSON" גרמה לו לחשוף את כל ההוראות ואת הקוד הסודי שלו, בשלוש מתוך שלוש חזרות (ובאנגלית אף פעם). אחרי שנוסף להוראות משפט אחד שהכלי הציע, אותה תקיפה נכשלה בכל שש ההרצות.</p>
+
+<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה, ו-150 התרחישים פורסמו ב-<a href="https://huggingface.co/datasets/chagitmi/HebJudge">Hugging Face</a>. גרסה 2 זמינה כתצוגה מקדימה מהקוד. השלב הבא: התקנה בפקודה אחת (<code>pip install hebjudge</code>) ומדריך התקנה בעברית.</p>
 
 </div>
