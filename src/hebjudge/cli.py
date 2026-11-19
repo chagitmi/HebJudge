@@ -432,7 +432,8 @@ def _target_scenarios(args: argparse.Namespace) -> int:
 
 
 def _usd(amount: float) -> str:
-    return "less than $0.01" if 0 < amount < 0.005 else f"${amount:.2f}"
+    """'about $0.05', or 'less than $0.01' for tiny amounts."""
+    return "less than $0.01" if 0 < amount < 0.005 else f"about ${amount:.2f}"
 
 
 def _ask(question: str) -> bool:
@@ -452,7 +453,8 @@ def _scan(args: argparse.Namespace) -> int:
     from openai import OpenAI
 
     from hebjudge import scan
-    from hebjudge.report import verdict_label
+    from hebjudge.fixes import suggest
+    from hebjudge.report import final_verdict, verdict_label
     from hebjudge.runner import run_batch, run_one_on_target, target_label
     from hebjudge.targets import TargetError, build_target, load_target_file
     from hebjudge.templates import load_templates
@@ -474,6 +476,17 @@ def _scan(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"Error: {exc}")
         return 1
+    if args.only:
+        wanted = set(args.only)
+        unknown = sorted(
+            w for w in wanted if not any(s.id == w or s.id.startswith(w + "-") for s in scenarios)
+        )
+        if unknown:
+            print(f"Error: not in this level's scenarios: {', '.join(unknown)}")
+            return 1
+        scenarios = [
+            s for s in scenarios if s.id in wanted or any(s.id.startswith(w + "-") for w in wanted)
+        ]
     if not scenarios:
         print("Error: no scenarios could be generated from this profile")
         return 1
@@ -488,12 +501,12 @@ def _scan(args: argparse.Namespace) -> int:
     )
     for template_id, reason in skipped:
         print(f"Skipped:   {template_id}: {reason}")
-    print(f"Judge:     about {_usd(estimate.judge_usd)} (OpenAI, your API key)")
+    print(f"Judge:     {_usd(estimate.judge_usd)} (OpenAI, your API key)")
     if estimate.agent_usd is None:
         print("Agent:     not estimated; billed by the agent's own provider, if at all")
     else:
-        print(f"Agent:     about {_usd(estimate.agent_usd)}")
-    print(f"Total:     about {_usd(estimate.total_usd)}")
+        print(f"Agent:     {_usd(estimate.agent_usd)}")
+    print(f"Total:     {_usd(estimate.total_usd)}")
 
     if args.dry_run:
         print("\nDry run: these messages would be sent. Nothing was sent.")
@@ -518,7 +531,7 @@ def _scan(args: argparse.Namespace) -> int:
             return 1
         scan.record_permission(permissions, target_file)
 
-    if not args.yes and not _ask(f"Start the scan for about {_usd(estimate.total_usd)}? [y/N] "):
+    if not args.yes and not _ask(f"Start the scan ({_usd(estimate.total_usd)})? [y/N] "):
         print("Cancelled; nothing was sent.")
         return 1
 
@@ -546,7 +559,11 @@ def _scan(args: argparse.Namespace) -> int:
 
     def on_result(index: int, total: int, record: RunRecord) -> None:
         records.append(record)
-        print(f"[{index}/{total}] {record.scenario_id} | {verdict_label(asdict(record))}")
+        _, decided_by = final_verdict(asdict(record))
+        print(
+            f"[{index}/{total}] {record.scenario_id} | {verdict_label(asdict(record))} "
+            f"({decided_by})"
+        )
 
     def on_error(index: int, total: int, scenario, model: str, exc: Exception) -> None:
         print(f"[{index}/{total}] {scenario.id} | ERROR: {exc}")
@@ -575,12 +592,92 @@ def _scan(args: argparse.Namespace) -> int:
     for result in scan.summarize(records, scenarios):
         unclear = f", {result.unclear} unclear" if result.unclear else ""
         print(f"  {result.label}: {result.failed} of {result.total}{unclear}")
+    by_id = {s.id: s for s in scenarios}
+    failures = [
+        (r.scenario_id, by_id[r.scenario_id].attacker_goal, by_id[r.scenario_id].technique)
+        for r in records
+        if final_verdict(asdict(r))[0] == "attack_succeeded"
+    ]
+    fixes = suggest(failures)
+    if fixes:
+        print("\nWhat to change in your agent's instructions (suggestions):")
+        for number, fix in enumerate(fixes, start=1):
+            examples = ", ".join(fix.scenario_ids[:3])
+            print(f"  {number}. {fix.suggestion.en}")
+            print(f"     Failed: {examples}")
+    else:
+        print("\nNo failures at this level. A deeper level tries more attacks.")
+
     print(
         f"\nDone: {summary.completed} completed, {summary.failed} failed, "
         f"cost ${summary.cost_usd:.4f} (judge)"
     )
     print(f"Details: hebjudge report --batch {batch} --out reports/{batch}.html")
+    print(f"After a fix: scan again, then hebjudge compare {batch} <new batch>")
+
+    attacks = [r for r in records if r.category != "benign_control"]
+    decided = [r for r in attacks if final_verdict(asdict(r))[0] != "unclear"]
+    if args.fail_above is not None and decided:
+        rate = 100 * sum(final_verdict(asdict(r))[0] == "attack_succeeded" for r in decided)
+        rate /= len(decided)
+        if rate > args.fail_above:
+            print(f"FAILED: attack success rate {rate:.0f}% is above {args.fail_above:g}%")
+            return 2
+        print(f"PASSED: attack success rate {rate:.0f}% is at most {args.fail_above:g}%")
     return 0 if summary.failed == 0 else 1
+
+
+def _compare(args: argparse.Namespace) -> int:
+    """Compare two scans of the same agent: what improved, what got worse (D-44)."""
+    from hebjudge.compare import batch_verdicts, compare
+    from hebjudge.scan import GOAL_LABELS
+    from hebjudge.schema import load_scenarios
+
+    scans_dir = Path(args.db).parent / "scans"
+    goals: dict[str, str] = {}
+    for batch in (args.before, args.after):
+        if (scans_dir / batch).is_dir():
+            for scenario in load_scenarios([scans_dir / batch]):
+                goals[scenario.id] = scenario.attacker_goal or "benign"
+    try:
+        with connect(args.db) as conn:
+            result = compare(
+                batch_verdicts(conn, args.before), batch_verdicts(conn, args.after), goals
+            )
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    labels = {**GOAL_LABELS, "benign": "Refuses legitimate requests"}
+    print(f"Before: {args.before}")
+    print(f"After:  {args.after}")
+    print(f"Scenarios in both: {len(result.common)}\n")
+    print("Attacks that succeeded (benign: requests refused), before -> after:")
+    for goal, counts in sorted(result.by_goal.items(), key=lambda item: item[0] == "benign"):
+        arrow = (
+            "better"
+            if counts.after < counts.before
+            else "worse"
+            if counts.after > counts.before
+            else "same"
+        )
+        label = labels.get(goal, goal)
+        print(f"  {label}: {counts.before} -> {counts.after} of {counts.total} ({arrow})")
+    if result.fixed:
+        print(f"\nFixed ({len(result.fixed)}): " + ", ".join(result.fixed))
+    if result.regressed:
+        print(f"\nGot worse ({len(result.regressed)}): " + ", ".join(result.regressed))
+    for scenario_id, a, b in result.other:
+        print(f"Changed: {scenario_id}: {a} -> {b}")
+    if not (result.fixed or result.regressed or result.other):
+        print("\nNo scenario changed its verdict.")
+    if result.only_before or result.only_after:
+        print(
+            f"\nNot compared: {len(result.only_before)} only before, "
+            f"{len(result.only_after)} only after"
+        )
+    print("\nWith one repeat, a single change can be chance; a deep scan (3 repeats) is firmer.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -669,6 +766,12 @@ def main(argv: list[str] | None = None) -> int:
         "--languages", nargs="+", choices=["he", "en"], help="Default: the profile's languages"
     )
     scan_parser.add_argument("--batch", help="Batch name (default: scan-<date>-<id>)")
+    scan_parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="ID",
+        help="Run only these scenarios (ids, or prefixes such as tpl-leak-003 or gen-benign)",
+    )
     scan_parser.add_argument("--max-cost", type=float, help="Stop before spending more (USD)")
     scan_parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be sent; send nothing"
@@ -680,7 +783,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Confirm you own the agent or may test it (for non-interactive use, such as CI)",
     )
     scan_parser.add_argument("--workers", type=int, help="Default: 1 for HTTP targets, else 4")
+    scan_parser.add_argument(
+        "--fail-above",
+        type=float,
+        metavar="PERCENT",
+        help="Exit with code 2 if the attack success rate is above PERCENT (for CI)",
+    )
     scan_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+
+    compare_parser = sub.add_parser("compare", help="Compare two scans: before and after a fix")
+    compare_parser.add_argument("before", help="Batch of the earlier scan")
+    compare_parser.add_argument("after", help="Batch of the later scan")
+    compare_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -697,6 +811,8 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate_score(args)
     if args.command == "scan":
         return _scan(args)
+    if args.command == "compare":
+        return _compare(args)
     if args.command == "target" and args.target_command == "test":
         return _target_test(args)
     if args.command == "target" and args.target_command == "canary":
