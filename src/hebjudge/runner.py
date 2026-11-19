@@ -13,7 +13,7 @@ from openai import OpenAI
 
 from hebjudge import __version__
 from hebjudge.checks import run_checks
-from hebjudge.judge import JUDGE_MODEL, judge
+from hebjudge.judge import JUDGE_MODEL, AgentPolicy, judge
 from hebjudge.pricing import cost_usd
 from hebjudge.schema import Scenario
 from hebjudge.target_agent.agent import MODEL_SETTINGS, TEMPERATURE, run_agent
@@ -100,8 +100,11 @@ def run_one_on_target(
     batch: str = DEV_BATCH,
     repeat_index: int = 0,
     settings: dict | None = None,
+    policy: AgentPolicy | None = None,
 ) -> RunRecord:
     """Run one scenario on an external target through its adapter (D-41).
+
+    With `policy`, the judge uses the owner's role and policy instead of the store policy (D-43).
 
     Only the judge is billed by HebJudge; the target's own cost and tokens are unknown and stored
     as 0. Tool calls the target does not expose are stored as JSON `null`, not as an empty list.
@@ -113,8 +116,11 @@ def run_one_on_target(
     message = scenario.turns[0].content
     reply = target.send(message, session_id=f"hj-{uuid.uuid4().hex[:12]}")
     outcome = run_checks(scenario, reply.text, reply.tool_calls)
+    policy_kwargs = {"policy": policy} if policy is not None else {}
     judged = (
-        judge(judge_client, scenario, reply.text, reply.tool_calls) if outcome.needs_judge else None
+        judge(judge_client, scenario, reply.text, reply.tool_calls, **policy_kwargs)
+        if outcome.needs_judge
+        else None
     )
     judge_cost = cost_usd(JUDGE_MODEL, judged.input_tokens, judged.output_tokens) if judged else 0.0
     settings_json = json.dumps(settings or {}, ensure_ascii=False, sort_keys=True)

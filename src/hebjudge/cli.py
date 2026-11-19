@@ -431,6 +431,158 @@ def _target_scenarios(args: argparse.Namespace) -> int:
     return 0
 
 
+def _usd(amount: float) -> str:
+    return "less than $0.01" if 0 < amount < 0.005 else f"${amount:.2f}"
+
+
+def _ask(question: str) -> bool:
+    """Ask a yes/no question; no answer (for example, not interactive) counts as no."""
+    try:
+        return input(question).strip().lower() in {"y", "yes", "כן"}
+    except EOFError:
+        return False
+
+
+def _scan(args: argparse.Namespace) -> int:
+    """Scan an agent from its target file (v2 design, sections 7 and 11; D-43)."""
+    import uuid
+    from datetime import UTC, datetime
+
+    from dotenv import load_dotenv
+    from openai import OpenAI
+
+    from hebjudge import scan
+    from hebjudge.report import verdict_label
+    from hebjudge.runner import run_batch, run_one_on_target, target_label
+    from hebjudge.targets import TargetError, build_target, load_target_file
+    from hebjudge.templates import load_templates
+
+    load_dotenv()
+    try:
+        target_file = load_target_file(args.config)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}")
+        return 1
+    profile = target_file.profile
+    if profile is None:
+        print("Error: the target file has no profile; a scan needs one (see examples/targets)")
+        return 1
+
+    level = scan.LEVELS[args.level]
+    try:
+        scenarios, skipped = scan.select_scenarios(profile, load_templates(), level, args.languages)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
+    if not scenarios:
+        print("Error: no scenarios could be generated from this profile")
+        return 1
+
+    runs = len(scenarios) * level.repeats
+    estimate = scan.estimate_cost(target_file, runs)
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    batch = args.batch or f"scan-{stamp}-{uuid.uuid4().hex[:4]}"
+    print(f"Target:    {target_file.name} ({target_file.target.adapter})")
+    print(
+        f"Level:     {level.name}: {len(scenarios)} scenarios x {level.repeats} repeats = {runs} runs"
+    )
+    for template_id, reason in skipped:
+        print(f"Skipped:   {template_id}: {reason}")
+    print(f"Judge:     about {_usd(estimate.judge_usd)} (OpenAI, your API key)")
+    if estimate.agent_usd is None:
+        print("Agent:     not estimated; billed by the agent's own provider, if at all")
+    else:
+        print(f"Agent:     about {_usd(estimate.agent_usd)}")
+    print(f"Total:     about {_usd(estimate.total_usd)}")
+
+    if args.dry_run:
+        print("\nDry run: these messages would be sent. Nothing was sent.")
+        for scenario in scenarios:
+            print(f"- {scenario.id}: {scenario.turns[0].content}")
+        return 0
+
+    if args.max_cost is not None and estimate.total_usd > args.max_cost:
+        print(f"Error: the estimate exceeds --max-cost ${args.max_cost:.2f}; nothing was sent")
+        return 1
+
+    permissions = Path(args.db).parent / "permissions.json"
+    if not scan.has_permission(permissions, target_file):
+        print(
+            "\nHebJudge sends attacks to this agent. Use it only on an agent you own or have "
+            "permission to test, in a test environment, without real customer data."
+        )
+        if not args.confirm_permission and not _ask(
+            "Do you own this agent or have permission to test it? Type 'yes' to confirm: "
+        ):
+            print("Not confirmed; nothing was sent.")
+            return 1
+        scan.record_permission(permissions, target_file)
+
+    if not args.yes and not _ask(f"Start the scan for about {_usd(estimate.total_usd)}? [y/N] "):
+        print("Cancelled; nothing was sent.")
+        return 1
+
+    try:
+        target = build_target(target_file)
+    except (ValueError, TargetError) as exc:
+        print(f"Error: {exc}")
+        return 1
+    scan.save_scenarios(scenarios, Path(args.db).parent / "scans" / batch)
+    settings = {"name": target_file.name, **_public_settings(target_file)}
+    policy = scan.agent_policy(profile)
+
+    def run_on_target(client, scenario, model, batch, repeat_index):
+        return run_one_on_target(
+            target,
+            client,
+            scenario,
+            batch=batch,
+            repeat_index=repeat_index,
+            settings=settings,
+            policy=policy,
+        )
+
+    records: list[RunRecord] = []
+
+    def on_result(index: int, total: int, record: RunRecord) -> None:
+        records.append(record)
+        print(f"[{index}/{total}] {record.scenario_id} | {verdict_label(asdict(record))}")
+
+    def on_error(index: int, total: int, scenario, model: str, exc: Exception) -> None:
+        print(f"[{index}/{total}] {scenario.id} | ERROR: {exc}")
+
+    workers = args.workers or (1 if target_file.target.adapter == "http" else 4)
+    print(f"\nBatch '{batch}', {workers} at a time")
+    try:
+        with connect(args.db) as conn:
+            summary = run_batch(
+                OpenAI(max_retries=6),
+                scenarios,
+                [target_label(target)],
+                level.repeats,
+                batch,
+                conn,
+                run_fn=scan.with_budget(run_on_target, args.max_cost),
+                on_result=on_result,
+                on_error=on_error,
+                workers=workers,
+            )
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    print("\nResults (attack succeeded / decided runs):")
+    for result in scan.summarize(records, scenarios):
+        unclear = f", {result.unclear} unclear" if result.unclear else ""
+        print(f"  {result.label}: {result.failed} of {result.total}{unclear}")
+    print(
+        f"\nDone: {summary.completed} completed, {summary.failed} failed, "
+        f"cost ${summary.cost_usd:.4f} (judge)"
+    )
+    print(f"Details: hebjudge report --batch {batch} --out reports/{batch}.html")
+    return 0 if summary.failed == 0 else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -510,6 +662,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     target_scenarios_parser.add_argument("--out", help="Directory to write the scenarios to")
 
+    scan_parser = sub.add_parser("scan", help="Scan an agent from its target file (v2)")
+    scan_parser.add_argument("config", help="Target YAML file with a profile")
+    scan_parser.add_argument("--level", choices=["quick", "standard", "deep"], default="quick")
+    scan_parser.add_argument(
+        "--languages", nargs="+", choices=["he", "en"], help="Default: the profile's languages"
+    )
+    scan_parser.add_argument("--batch", help="Batch name (default: scan-<date>-<id>)")
+    scan_parser.add_argument("--max-cost", type=float, help="Stop before spending more (USD)")
+    scan_parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be sent; send nothing"
+    )
+    scan_parser.add_argument("--yes", action="store_true", help="Do not ask before starting")
+    scan_parser.add_argument(
+        "--confirm-permission",
+        action="store_true",
+        help="Confirm you own the agent or may test it (for non-interactive use, such as CI)",
+    )
+    scan_parser.add_argument("--workers", type=int, help="Default: 1 for HTTP targets, else 4")
+    scan_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
@@ -523,6 +695,8 @@ def main(argv: list[str] | None = None) -> int:
         return _calibrate_page(args)
     if args.command == "calibrate" and args.calibrate_command == "score":
         return _calibrate_score(args)
+    if args.command == "scan":
+        return _scan(args)
     if args.command == "target" and args.target_command == "test":
         return _target_test(args)
     if args.command == "target" and args.target_command == "canary":
