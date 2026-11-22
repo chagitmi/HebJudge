@@ -39,12 +39,12 @@ def _public_settings(target_file) -> dict:
 
 
 def _run(args: argparse.Namespace) -> int:
-    from dotenv import load_dotenv
     from openai import OpenAI
 
     from hebjudge.report import final_verdict, verdict_label
     from hebjudge.runner import run_batch
     from hebjudge.schema import load_scenarios
+    from hebjudge.settings import load_settings
 
     if args.repeats < 1:
         print("Error: --repeats must be at least 1")
@@ -62,7 +62,7 @@ def _run(args: argparse.Namespace) -> int:
         print("Error: --workers must be at least 1")
         return 1
 
-    load_dotenv()
+    load_settings()
     models = args.models
     run_fn = None
     if args.target:
@@ -146,12 +146,12 @@ def _run(args: argparse.Namespace) -> int:
 
 
 def _rejudge(args: argparse.Namespace) -> int:
-    from dotenv import load_dotenv
     from openai import OpenAI
 
     from hebjudge.rejudge import rejudge_batch
     from hebjudge.report import verdict_label
     from hebjudge.schema import load_scenarios
+    from hebjudge.settings import load_settings
 
     if not Path(args.db).exists():
         print(f"No trace database at {args.db}. Run a scenario first.")
@@ -172,7 +172,7 @@ def _rejudge(args: argparse.Namespace) -> int:
     def on_error(old: RunRecord, exc: Exception) -> None:
         print(f"ERROR    {old.scenario_id} | {old.agent_model} | {exc}")
 
-    load_dotenv()
+    load_settings()
     try:
         with connect(args.db) as conn:
             summary = rejudge_batch(
@@ -335,11 +335,10 @@ def _target_test(args: argparse.Namespace) -> int:
     """Send one harmless message to a target and show the reply (v2 design, section 3)."""
     import uuid
 
-    from dotenv import load_dotenv
-
+    from hebjudge.settings import load_settings
     from hebjudge.targets import HELLO_MESSAGE, TargetError, build_target, load_target_file
 
-    load_dotenv()
+    load_settings()
     try:
         target_file = load_target_file(args.config)
         target = build_target(target_file)
@@ -449,15 +448,14 @@ def _scan(args: argparse.Namespace) -> int:
     import uuid
     from datetime import UTC, datetime
 
-    from dotenv import load_dotenv
-
     from hebjudge import scan
     from hebjudge.fixes import suggest
     from hebjudge.report import final_verdict, verdict_label
+    from hebjudge.settings import load_settings
     from hebjudge.targets import TargetError, load_target_file
     from hebjudge.templates import load_templates
 
-    load_dotenv()
+    load_settings()
     try:
         target_file = load_target_file(args.config)
     except (ValueError, FileNotFoundError) as exc:
@@ -660,6 +658,51 @@ def _ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def _init(args: argparse.Namespace) -> int:
+    """Copy the example agents into the current folder (D-46)."""
+    from hebjudge.examples_init import copy_examples
+
+    written = copy_examples(args.dir)
+    if written:
+        print(f"Copied {len(written)} example files to {args.dir}/")
+    else:
+        print(f"The examples are already in {args.dir}/; nothing was overwritten.")
+    print("Next: hebjudge ui   (or: hebjudge target test examples/targets/toy-python.yaml)")
+    return 0
+
+
+def _key(args: argparse.Namespace) -> int:
+    """Set, show, remove or check the OpenAI API key used by the judge (D-46)."""
+    import getpass
+
+    from hebjudge import settings
+
+    settings.load_settings()
+    if args.key_command == "set":
+        key = getpass.getpass("Paste your OpenAI API key (it will not be shown): ")
+        try:
+            settings.save_api_key(key)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return 1
+        print(f"Saved to {settings.config_file()} (readable by you only).")
+        return 0
+    if args.key_command == "remove":
+        settings.delete_api_key()
+        print("Removed the key from the settings file.")
+        return 0
+    if args.key_command == "test":
+        ok, detail = settings.test_api_key()
+        print("The key works." if ok else f"The key does not work: {detail}")
+        return 0 if ok else 1
+    status = settings.key_status()
+    if status["set"]:
+        print(f"A key ending in ...{status['hint']} is set (from the {status['source']}).")
+    else:
+        print("No key is set. Run: hebjudge key set")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -781,6 +824,13 @@ def main(argv: list[str] | None = None) -> int:
     ui_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser")
     ui_parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
 
+    init_parser = sub.add_parser("init", help="Copy the example agents into this folder")
+    init_parser.add_argument("--dir", default="examples")
+    key_parser = sub.add_parser("key", help="The OpenAI API key for the judge")
+    key_parser.add_argument(
+        "key_command", nargs="?", choices=["show", "set", "remove", "test"], default="show"
+    )
+
     args = parser.parse_args(argv)
     if args.command == "run":
         return _run(args)
@@ -800,6 +850,10 @@ def main(argv: list[str] | None = None) -> int:
         return _compare(args)
     if args.command == "ui":
         return _ui(args)
+    if args.command == "init":
+        return _init(args)
+    if args.command == "key":
+        return _key(args)
     if args.command == "target" and args.target_command == "test":
         return _target_test(args)
     if args.command == "target" and args.target_command == "canary":

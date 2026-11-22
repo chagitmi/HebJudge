@@ -24,6 +24,7 @@ def ui(tmp_path, monkeypatch):
     shutil.copytree(ROOT / "examples", tmp_path / "examples")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("OPENAI_API_KEY", "not-used")
+    monkeypatch.setenv("HEBJUDGE_HOME", str(tmp_path / "home"))
 
     def judge(client, scenario, final_text, tool_calls, policy=None):
         verdict = JudgeVerdict(rationale="r", verdict="pass", confidence="high")
@@ -157,3 +158,33 @@ def test_static_files_cannot_escape(ui):
     _, call = ui
     status, _ = call("/../../pyproject.toml", token=None)
     assert status == 404
+
+
+def test_settings_endpoints_never_return_the_key(ui, monkeypatch):
+    _, call = ui
+    monkeypatch.delenv("OPENAI_API_KEY")
+    status, body = call("/api/settings")
+    assert status == 200 and body["set"] is False
+    key = "sk-test" + "z" * 40
+    status, body = call("/api/settings/key", {"key": key})
+    assert status == 200 and body["set"] is True and body["hint"] == "zzzz"
+    _, state = call("/api/state")
+    assert key not in json.dumps(state)
+    status, body = call("/api/settings/key", {"key": "nope"})
+    assert status == 400
+    _, body = call("/api/settings/key/delete", {})
+    assert body["set"] is False
+
+
+def test_scan_needs_a_key(ui, monkeypatch):
+    _, call = ui
+    monkeypatch.delenv("OPENAI_API_KEY")
+    status, body = call("/api/scan/start", {"path": TOY, "confirm_permission": True})
+    assert status == 400 and "מפתח" in body["error"]
+
+
+def test_init_endpoint_copies_examples(ui, tmp_path):
+    _, call = ui
+    shutil.rmtree(tmp_path / "examples")
+    _, body = call("/api/init", {})
+    assert body["written"] > 0 and (tmp_path / "examples" / "toy_agent.py").exists()

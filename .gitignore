@@ -222,4 +222,4 @@ __marimo__/
 # HebJudge: raw traces stay local (SPEC 6.4)
 data/runs/
 # HebJudge: agents created in the UI may name internal URLs; keep them local
-targets/
+/targets/

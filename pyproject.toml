@@ -4,12 +4,24 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hebjudge"
-version = "0.1.0"
-description = "Hebrew agent evaluation & red-teaming"
+version = "0.2.0"
+description = "Test LLM agents against prompt injection and data leakage in Hebrew and English, with a calibrated LLM judge and a Hebrew interface"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "chagitmi" }]
+keywords = ["llm", "agents", "evals", "prompt-injection", "red-teaming", "ai-safety", "llm-as-a-judge", "hebrew"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: Hebrew",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "openai>=3.35,<4",
     "python-dotenv>=1.2",
@@ -20,11 +32,23 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=9.1", "ruff"]
 
+[project.urls]
+Homepage = "https://github.com/chagitmi/HebJudge"
+Dataset = "https://huggingface.co/datasets/chagitmi/HebJudge"
+Issues = "https://github.com/chagitmi/HebJudge/issues"
+
 [project.scripts]
 hebjudge = "hebjudge.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hebjudge"]
+
+# The example agents ship inside the package; `hebjudge init` copies them out (D-46).
+[tool.hatch.build.targets.wheel.force-include]
+"examples" = "hebjudge/_examples"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "examples", "tests", "README.md", "LICENSE", "docs/images"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

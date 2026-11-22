@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-from hebjudge import __version__, scan
+from hebjudge import __version__, scan, settings
 from hebjudge.compare import batch_verdicts, compare
 from hebjudge.fixes import suggest
 from hebjudge.judge import JUDGE_MODEL
@@ -168,6 +168,8 @@ class App:
         return target_file, scenarios, level, skipped, estimate
 
     def start_scan(self, body: dict) -> str:
+        if not settings.key_status()["set"]:
+            raise ApiError("חסר מפתח API לשופט. אפשר להוסיף אותו במסך ההגדרות.")
         target_file, scenarios, level, _, estimate = self.plan(body)
         permissions = self.db_path.parent / "permissions.json"
         if not scan.has_permission(permissions, target_file):
@@ -435,11 +437,30 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
             "version": __version__,
             "targets": app.list_targets(),
             "scans": app.scans(),
+            "key": settings.key_status(),
             "levels": {
                 name: {"repeats": level.repeats, "templates": level.templates is None}
                 for name, level in scan.LEVELS.items()
             },
         }
+    if method == "GET" and path == "/api/settings":
+        return settings.key_status()
+    if method == "POST" and path == "/api/settings/key":
+        try:
+            settings.save_api_key(data["key"])
+        except ValueError as exc:
+            raise ApiError("זה לא נראה כמו מפתח של OpenAI (הוא מתחיל ב-sk-)") from exc
+        return settings.key_status()
+    if method == "POST" and path == "/api/settings/key/delete":
+        settings.delete_api_key()
+        return settings.key_status()
+    if method == "POST" and path == "/api/settings/key/test":
+        ok, detail = settings.test_api_key()
+        return {"ok": ok, "detail": detail}
+    if method == "POST" and path == "/api/init":
+        from hebjudge.examples_init import copy_examples
+
+        return {"written": len(copy_examples(app.root / "examples"))}
     if method == "GET" and path == "/api/target":
         target_file = app.load(data["path"])
         return {
@@ -517,9 +538,9 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
 def serve(
     port: int = 8770, db_path: str | Path = DEFAULT_DB_PATH, open_browser: bool = True
 ) -> None:
-    from dotenv import load_dotenv
+    from hebjudge.settings import load_settings
 
-    load_dotenv()
+    load_settings()
     app = App(Path.cwd(), Path(db_path))
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
     url = f"http://127.0.0.1:{server.server_address[1]}/"

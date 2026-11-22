@@ -118,7 +118,15 @@ function dateText(iso) {
 let state = { targets: [], scans: [] };
 async function refreshState() {
   state = await api("/api/state");
+  showKeyStatus(state.key);
   return state;
+}
+
+function showKeyStatus(key) {
+  const dot = document.getElementById("key-dot");
+  if (!dot || !key) return;
+  dot.className = `key-dot ${key.set ? "ok" : "missing"}`;
+  dot.parentElement.title = key.set ? "מפתח API מוגדר" : "חסר מפתח API לשופט";
 }
 
 /* --- routing ------------------------------------------------------------------- */
@@ -132,6 +140,7 @@ const routes = [
   [/^#\/results$/, viewResults],
   [/^#\/results\/(.+)$/, (m) => viewResult(decodeURIComponent(m[1]))],
   [/^#\/compare$/, viewCompare],
+  [/^#\/settings$/, viewSettings],
 ];
 
 let stopPolling = () => {};
@@ -210,7 +219,15 @@ async function viewAgents() {
           { class: "panel flush" },
           h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "סוכן"), h("th", {}, "חיבור"), h("th", {}, "פרופיל"), h("th", {}, ""))), h("tbody", {}, rows))
         )
-      : h("div", { class: "panel empty" }, h("h2", {}, "עוד אין סוכנים"), h("p", {}, "הוסיפו את הסוכן הראשון, או פתחו את התיקייה examples/targets."))
+      : h(
+          "div",
+          { class: "panel empty" },
+          h("h2", {}, "עוד אין סוכנים"),
+          h("p", {}, "אפשר להתחיל מסוכני הדוגמה: סוכן צעצוע שלא עולה כלום, ומרפאת שיניים לפני ואחרי תיקון."),
+          h("div", { class: "row", style: "justify-content:center" },
+            h("button", { class: "btn primary", onclick: async () => { const r = await api("/api/init", {}); toast(`הועתקו ${r.written} קבצי דוגמה`); route(); } }, "הוספת סוכני הדוגמה"),
+            h("a", { class: "btn", href: "#/agent/new" }, "סוכן חדש"))
+        )
   );
 }
 
@@ -532,6 +549,10 @@ async function viewScan(path) {
     } else {
       startButton.disabled = false;
     }
+    if (!state.key || !state.key.set) {
+      startButton.disabled = true;
+      permissionBox.prepend(h("div", { class: "note danger", style: "margin-bottom:12px" }, "כדי לסרוק צריך מפתח API של OpenAI בשביל השופט. ", h("a", { href: "#/settings" }, "להגדרות")));
+    }
   };
 
   startButton.addEventListener("click", async () => {
@@ -833,6 +854,76 @@ async function viewCompare() {
     h("p", { class: "lede" }, "האם התיקון עבד? משווים שתי סריקות של אותן תקיפות בדיוק: מה נסגר, ומה נפתח."),
     h("section", { class: "panel" }, h("div", { class: "grid-2" }, h("label", { class: "field" }, "לפני", before), h("label", { class: "field" }, "אחרי", after)), h("div", { style: "margin-top:14px" }, h("button", { class: "btn primary", onclick: run }, "השוואה"))),
     out
+  );
+}
+
+
+/* --- settings ------------------------------------------------------------------------- */
+
+async function viewSettings() {
+  await refreshState();
+  const statusBox = h("div");
+  const keyInput = h("input", { type: "password", dir: "ltr", autocomplete: "off", placeholder: "sk-...", spellcheck: "false" });
+  const message = h("div");
+
+  const drawStatus = (key) => {
+    showKeyStatus(key);
+    fill(
+      statusBox,
+      key.set
+        ? h("div", { class: "status-line" }, h("span", { class: "key-dot ok" }), "מוגדר מפתח שמסתיים ב-", h("bdi", { class: "code" }, `…${key.hint}`), h("span", { class: "muted small" }, key.source === "file" ? " (נשמר בהגדרות)" : " (ממשתנה סביבה או מקובץ .env)"))
+        : h("div", { class: "status-line" }, h("span", { class: "key-dot missing" }), "עוד לא הוגדר מפתח")
+    );
+  };
+  drawStatus(state.key);
+
+  const save = async () => {
+    try {
+      const key = await api("/api/settings/key", { key: keyInput.value });
+      keyInput.value = "";
+      drawStatus(key);
+      fill(message, h("div", { class: "note warn" }, "המפתח נשמר. כדאי ללחוץ על \"בדיקת המפתח\"."));
+    } catch (error) {
+      fill(message, errorBox(error));
+    }
+  };
+  const test = async () => {
+    fill(message, h("p", { class: "muted" }, h("span", { class: "spinner" }), " בודק…"));
+    const r = await api("/api/settings/key/test", {});
+    fill(message, r.ok ? h("div", { class: "note warn" }, "המפתח עובד. אפשר לסרוק.") : h("div", { class: "note danger" }, "המפתח לא עובד: ", h("bdi", { class: "code" }, r.detail), ". כדאי לבדוק שהעתקתם אותו במלואו, ושיש יתרה בחשבון."));
+  };
+  const remove = async () => {
+    const key = await api("/api/settings/key/delete", {});
+    drawStatus(key);
+    fill(message, h("div", { class: "note" }, "המפתח הוסר מקובץ ההגדרות."));
+  };
+
+  render(
+    h("h1", {}, "הגדרות"),
+    h("p", { class: "lede" }, "HebJudge צריך מפתח API של OpenAI בשביל השופט, המודל שבודק כל תשובה של הסוכן. הסריקות מחויבות בחשבון OpenAI שלכם, ולפני כל סריקה מוצגת העלות."),
+    h(
+      "section",
+      { class: "panel stack" },
+      h("h2", {}, "מפתח API לשופט"),
+      statusBox,
+      h("label", { class: "field" }, "מפתח חדש", h("span", { class: "hint" }, "יוצרים מפתח בכתובת platform.openai.com/api-keys ומדביקים כאן. הוא לא יוצג שוב."), keyInput),
+      h(
+        "div",
+        { class: "row" },
+        h("button", { class: "btn primary", onclick: save }, "שמירת המפתח"),
+        h("button", { class: "btn", onclick: test, disabled: !state.key.set }, "בדיקת המפתח (חינם)"),
+        h("button", { class: "btn ghost", onclick: remove, disabled: state.key.source !== "file" }, "הסרה")
+      ),
+      message,
+      h("p", { class: "muted small", style: "margin:0" }, "המפתח נשמר רק במחשב הזה, בקובץ ", h("bdi", { class: "code" }, state.key.file), ", שרק המשתמש שלכם יכול לקרוא. הוא לא נשמר בתיקיית הפרויקט, לא בתוצאות, ולא נשלח לשום מקום חוץ מ-OpenAI.")
+    ),
+    h(
+      "section",
+      { class: "panel stack" },
+      h("h2", {}, "סוכני דוגמה"),
+      h("p", { class: "muted", style: "margin:0" }, "מעתיק לתיקייה examples סוכן צעצוע (לא עולה כלום), ומרפאת שיניים לפני ואחרי תיקון. קבצים קיימים לא נדרסים."),
+      h("div", {}, h("button", { class: "btn", onclick: async () => { const r = await api("/api/init", {}); toast(r.written ? `הועתקו ${r.written} קבצים` : "סוכני הדוגמה כבר קיימים"); } }, "הוספת סוכני הדוגמה"))
+    )
   );
 }
 

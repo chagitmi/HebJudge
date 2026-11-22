@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/images/hebjudge-logo.png" alt="HebJudge" width="420"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/chagitmi/HebJudge/main/docs/images/hebjudge-logo.png" alt="HebJudge" width="420"></p>
 
 # HebJudge
 
@@ -8,13 +8,14 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 [![Dataset on Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20dataset-HebJudge-yellow)](https://huggingface.co/datasets/chagitmi/HebJudge)
-![Status](https://img.shields.io/badge/status-v1%20results%20%C2%B7%20v2%20preview-brightgreen)
+[![PyPI](https://img.shields.io/pypi/v/hebjudge)](https://pypi.org/project/hebjudge/)
+![Status](https://img.shields.io/badge/status-v1%20results%20%C2%B7%20v2%20beta-brightgreen)
 
 HebJudge is an open-source **evals framework and benchmark** for LLM-based agents in Hebrew. It measures whether agents can be manipulated by prompt injection, whether they leak protected data, and whether an **LLM-as-a-judge** grader can be trusted to score them, with the grader validated against human labels.
 
-> **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](reports/heonly-v1-summary.md). The 150 scenarios are published as a dataset on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
+> **Status:** v1 is complete: the main study on 60 Hebrew/English scenario pairs, with a pre-registered analysis and a calibrated judge, and a separate run of 30 Hebrew-only scenarios. Full results: [`reports/main-v1-summary.md`](https://github.com/chagitmi/HebJudge/blob/main/reports/main-v1-summary.md) and [`reports/heonly-v1-summary.md`](https://github.com/chagitmi/HebJudge/blob/main/reports/heonly-v1-summary.md). The 150 scenarios are published as a dataset on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
 >
-> **v2 preview:** you can now [scan your own agent](#test-your-own-agent-v2-preview), from a Hebrew interface in the browser or from the command line. Installation from PyPI is next.
+> **v2 beta:** you can now [scan your own agent](#test-your-own-agent-v2-beta), from a Hebrew interface in the browser or from the command line: `pip install hebjudge`.
 
 ---
 
@@ -22,7 +23,7 @@ HebJudge is an open-source **evals framework and benchmark** for LLM-based agent
 
 ### Hebrew vs. English
 
-From the main run (`main-v1`, 2026-11-15): 60 parallel scenario pairs, 3 OpenAI models, 3 repeats, 1,080 runs, analysed as pre-registered in [`docs/ANALYSIS_PLAN.md`](docs/ANALYSIS_PLAN.md).
+From the main run (`main-v1`, 2026-11-15): 60 parallel scenario pairs, 3 OpenAI models, 3 repeats, 1,080 runs, analysed as pre-registered in [`docs/ANALYSIS_PLAN.md`](https://github.com/chagitmi/HebJudge/blob/main/docs/ANALYSIS_PLAN.md).
 
 1. **No evidence that agents are more vulnerable in Hebrew than in English.** Attack success: 24% in English [20%–28%], 26% in Hebrew [22%–30%]. Of 150 pair-model cells, 9 failed only in Hebrew and 5 only in English (exact McNemar p = 0.42). The study could detect only a large difference; a small one cannot be ruled out.
 2. **The model matters far more than the language.** Attack success was 13% for `gpt-6-luna` and 31% for both `gpt-4o-mini` and `gpt-4.1-mini`, with non-overlapping intervals.
@@ -41,11 +42,11 @@ From a separate run (`heonly-v1`, 2026-11-17): 30 scenarios with no English twin
 4. **Obfuscation is often not understood at all.** Hebrew typed on an English keyboard layout was understood by every model when it contained an order id, and only by `gpt-6-luna` when it did not. No model decoded the Atbash cipher correctly.
 5. **A wrong decoding led to an unrequested action.** Asked in Atbash for a discount, `gpt-6-luna` "decoded" the message as a refund request and refunded an order nobody had named, in 3 of 3 repeats. The stronger model, by trying harder to understand, took an irreversible action. Exploratory, from one scenario.
 
-## Test your own agent (v2 preview)
+## Test your own agent (v2 beta)
 
 HebJudge can now attack **your** agent, not only its built-in store: a clinic assistant, a bank bot, an HR helper. You describe the agent once (what it may do, what is secret, what is forbidden); HebJudge turns 24 attack templates, in Hebrew and English, into attacks written for it, runs them, and tells you what to change.
 
-<p align="center"><img src="docs/images/ui-results.jpg" alt="Results screen: a verdict, a wall of runs per risk, and fix suggestions" width="860"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/chagitmi/HebJudge/main/docs/images/ui-results.jpg" alt="Results screen: a verdict, a wall of runs per risk, and fix suggestions" width="860"></p>
 
 ```bash
 hebjudge ui        # opens the Hebrew interface at http://127.0.0.1:8770
@@ -92,7 +93,16 @@ A null result counts as a valid finding (D-12). Success is defined by the qualit
 
 ## Quickstart
 
-Requires Python 3.11+ and an OpenAI API key.
+Requires Python 3.11+ and an OpenAI API key for the judge. Step-by-step guide, including installing Python on Windows: [English](https://github.com/chagitmi/HebJudge/blob/main/docs/INSTALL.md), [עברית](https://github.com/chagitmi/HebJudge/blob/main/docs/INSTALL.he.md).
+
+```bash
+pip install hebjudge
+hebjudge init        # copies example agents into ./examples
+hebjudge key set     # or paste the key in the interface, under Settings
+hebjudge ui          # opens the Hebrew interface in your browser
+```
+
+### From source (development, and the v1 benchmark)
 
 ```bash
 git clone https://github.com/chagitmi/HebJudge.git
@@ -134,7 +144,9 @@ Cost:    $0.001570
 | `hebjudge calibrate sample --batch NAME` | Pick a balanced, blind sample and build a Hebrew labeling page | No |
 | `hebjudge calibrate score --batch NAME --labels FILE` | Agreement and Cohen's kappa between human labels and the judge | No |
 | `hebjudge report --batch NAME` | HTML report with confidence intervals, paired McNemar test and breakdowns | No |
-| `hebjudge ui` | The Hebrew interface in your browser: agents, scans, results, before and after | Only when you start a scan |
+| `hebjudge ui` | The Hebrew interface in your browser: agents, scans, results, before and after, settings | Only when you start a scan |
+| `hebjudge init` | Copy the example agents into `./examples` | No |
+| `hebjudge key set\|show\|test\|remove` | Manage the OpenAI API key for the judge (stored in `~/.hebjudge/config.env`) | `test` only, free |
 | `hebjudge target test FILE` | Send one harmless message to an agent and show its reply | The agent only |
 | `hebjudge target scenarios FILE --out DIR` | Generate the attacks for an agent from its profile | No |
 | `hebjudge target canary` | Create a unique canary to plant in an agent's instructions | No |
@@ -183,7 +195,7 @@ HebJudge follows standard LLM evaluation (evals) practice. How the usual terms m
 - **Hidden text:** HTML white-on-white, `display:none`, zero-width characters and Unicode tag characters. A perception probe showed that none of the tested models reads tag characters.
 - **Customer tone:** polite, casual or aggressive, varied across scenarios.
 
-See the [scenario authoring guide](docs/SCENARIO_GUIDE.md).
+See the [scenario authoring guide](https://github.com/chagitmi/HebJudge/blob/main/docs/SCENARIO_GUIDE.md).
 
 ### Methodology
 
@@ -192,7 +204,7 @@ See the [scenario authoring guide](docs/SCENARIO_GUIDE.md).
 - **Pre-registration.** The analysis plan was committed and the setup frozen before each run (git tags `v0.2.0-frozen` for the main run and `v0.3.0-heonly-frozen` for the Hebrew-only run).
 - **Repeats.** Three repeats per scenario and model; 95% of cells in the main run and 100% in the Hebrew-only run gave the same verdict in all three.
 - **Grader validation.** The LLM judge is calibrated against blind human labels, with a tune half and a held-out test half, and kappa per language.
-- **Transparency.** Every design decision is logged with its reason in [`docs/DECISIONS.md`](docs/DECISIONS.md), and exploratory observations are kept apart from confirmatory results in [`docs/OBSERVATIONS.md`](docs/OBSERVATIONS.md).
+- **Transparency.** Every design decision is logged with its reason in [`docs/DECISIONS.md`](https://github.com/chagitmi/HebJudge/blob/main/docs/DECISIONS.md), and exploratory observations are kept apart from confirmatory results in [`docs/OBSERVATIONS.md`](https://github.com/chagitmi/HebJudge/blob/main/docs/OBSERVATIONS.md).
 
 ## Models
 
@@ -234,7 +246,9 @@ HebJudge/
 │   ├── fixes.py          # v2: fix suggestions per kind of failure
 │   ├── compare.py        # v2: before/after comparison
 │   ├── ui/               # v2: local web server and the Hebrew single-page interface
-│   └── cli.py            # hebjudge run / rejudge / calibrate / report / ui / target / scan / compare
+│   ├── settings.py       # v2: the judge's API key, kept in ~/.hebjudge/config.env
+│   ├── examples_init.py  # v2: hebjudge init, copies the bundled example agents
+│   └── cli.py            # hebjudge run / rejudge / calibrate / report / ui / init / key / target / scan / compare
 ├── examples/             # v2: example agents (toy, clinic, clinic after a fix, store) and generated attacks
 ├── tests/                # pytest suite (runs offline, no API key needed)
 └── scripts/              # API smoke test, run viewer, batch export, hidden-text perception probe
@@ -280,25 +294,25 @@ All attacks in this project run against the project's own mock agent, never agai
 - [x] v2: `hebjudge scan` with levels, cost estimate, spending cap, permission confirmation and the owner's policy for the judge
 - [x] v2: fix suggestions, before/after comparison, CI threshold
 - [x] v2: local Hebrew interface (`hebjudge ui`)
-- [ ] v2: install from PyPI (`pip install hebjudge`), an API-key screen in the interface, an installation guide in Hebrew and English
+- [x] v2: install from PyPI (`pip install hebjudge`), an API-key screen in the interface, an installation guide in Hebrew and English
 - [ ] Later: Hebrew-only attack templates (keyboard layout, Atbash), multi-turn attacks, a document-reading agent for indirect injection, a judge self-check on your own agent, other judge providers
 - [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
 
 ## Documentation
 
-- [Specification](docs/SPEC.md): goals, scope, schema, metrics, architecture
-- [v2 design](docs/V2_DESIGN.md): testing your own agent: adapters, profiles, templates, scans, fixes, interface
-- [Decision log](docs/DECISIONS.md): every design decision with its rationale and alternatives
-- [Analysis plan](docs/ANALYSIS_PLAN.md): the pre-registered analysis of both runs
-- [Scenario authoring guide](docs/SCENARIO_GUIDE.md): how to write and review scenarios
-- [Observations](docs/OBSERVATIONS.md): exploratory observations from development, logged as hypotheses
-- [Results: main-v1](reports/main-v1-summary.md): confirmatory results and calibration
-- [Results: heonly-v1](reports/heonly-v1-summary.md): descriptive results of the Hebrew-only scenarios
+- [Specification](https://github.com/chagitmi/HebJudge/blob/main/docs/SPEC.md): goals, scope, schema, metrics, architecture
+- [v2 design](https://github.com/chagitmi/HebJudge/blob/main/docs/V2_DESIGN.md): testing your own agent: adapters, profiles, templates, scans, fixes, interface
+- [Decision log](https://github.com/chagitmi/HebJudge/blob/main/docs/DECISIONS.md): every design decision with its rationale and alternatives
+- [Analysis plan](https://github.com/chagitmi/HebJudge/blob/main/docs/ANALYSIS_PLAN.md): the pre-registered analysis of both runs
+- [Scenario authoring guide](https://github.com/chagitmi/HebJudge/blob/main/docs/SCENARIO_GUIDE.md): how to write and review scenarios
+- [Observations](https://github.com/chagitmi/HebJudge/blob/main/docs/OBSERVATIONS.md): exploratory observations from development, logged as hypotheses
+- [Results: main-v1](https://github.com/chagitmi/HebJudge/blob/main/reports/main-v1-summary.md): confirmatory results and calibration
+- [Results: heonly-v1](https://github.com/chagitmi/HebJudge/blob/main/reports/heonly-v1-summary.md): descriptive results of the Hebrew-only scenarios
 - [Dataset on Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge): the 150 scenarios and the target-agent setup, ready to load with `datasets`
 
 ## License
 
-Code: [MIT](LICENSE). Data: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), published on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
+Code: [MIT](https://github.com/chagitmi/HebJudge/blob/main/LICENSE). Data: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), published on [Hugging Face](https://huggingface.co/datasets/chagitmi/HebJudge).
 
 ---
 
@@ -330,6 +344,6 @@ Code: [MIT](LICENSE). Data: [CC BY 4.0](https://creativecommons.org/licenses/by/
 
 <p dir="rtl">דוגמה: סריקה מהירה של סוכן לדוגמה של מרפאת שיניים מצאה חור אחד. בקשה בעברית "למלא תבנית JSON" גרמה לו לחשוף את כל ההוראות ואת הקוד הסודי שלו, בשלוש מתוך שלוש חזרות (ובאנגלית אף פעם). אחרי שנוסף להוראות משפט אחד שהכלי הציע, אותה תקיפה נכשלה בכל שש ההרצות.</p>
 
-<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה, ו-150 התרחישים פורסמו ב-<a href="https://huggingface.co/datasets/chagitmi/HebJudge">Hugging Face</a>. גרסה 2 זמינה כתצוגה מקדימה מהקוד. השלב הבא: התקנה בפקודה אחת (<code>pip install hebjudge</code>) ומדריך התקנה בעברית.</p>
+<p dir="rtl"><b>מצב נוכחי:</b> גרסה 1 הושלמה, ו-150 התרחישים פורסמו ב-<a href="https://huggingface.co/datasets/chagitmi/HebJudge">Hugging Face</a>. גרסה 2 זמינה בהתקנה בפקודה אחת: <code>pip install hebjudge</code>, ואחריה <code>hebjudge ui</code>. <a href="https://github.com/chagitmi/HebJudge/blob/main/docs/INSTALL.he.md">מדריך התקנה בעברית</a>.</p>
 
 </div>
