@@ -298,6 +298,33 @@ class App:
             "judge_model": JUDGE_MODEL,
         }
 
+    # Progress shown on the home screen ------------------------------------------------
+
+    def progress_file(self) -> Path:
+        return self.db_path.parent / "ui-progress.json"
+
+    def progress(self) -> dict:
+        """What the user has done that the data alone does not show (for now: comparisons)."""
+        try:
+            data = json.loads(self.progress_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        compared = data.get("compared") if isinstance(data, dict) else None
+        return {"compared": [str(name) for name in compared] if isinstance(compared, list) else []}
+
+    def _record_comparison(self, before: str, after: str) -> None:
+        names = {s["batch"]: s["target"] for s in self.scans()}
+        target = names.get(before)
+        if target is None or target != names.get(after):
+            return
+        progress = self.progress()
+        if target not in progress["compared"]:
+            progress["compared"].append(target)
+            self.progress_file().parent.mkdir(parents=True, exist_ok=True)
+            self.progress_file().write_text(
+                json.dumps(progress, ensure_ascii=False), encoding="utf-8"
+            )
+
     def compare(self, before: str, after: str) -> dict:
         scans_dir = self.db_path.parent / "scans"
         goals: dict[str, str] = {}
@@ -310,6 +337,7 @@ class App:
                 result = compare(batch_verdicts(conn, before), batch_verdicts(conn, after), goals)
         except ValueError as exc:
             raise ApiError(str(exc)) from exc
+        self._record_comparison(before, after)
         return {
             "before": before,
             "after": after,
@@ -437,6 +465,7 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
             "version": __version__,
             "targets": app.list_targets(),
             "scans": app.scans(),
+            "progress": app.progress(),
             "key": settings.key_status(),
             "levels": {
                 name: {"repeats": level.repeats, "templates": level.templates is None}

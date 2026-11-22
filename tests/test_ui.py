@@ -150,8 +150,11 @@ def test_scan_runs_and_results_and_compare(ui):
 
     _, state = call("/api/state")
     assert len(state["scans"]) == 2
+    assert state["progress"]["compared"] == []
     _, comparison = call(f"/api/compare?before={batches[0]}&after={batches[1]}")
     assert comparison["common"] == 19 and comparison["fixed"] == []
+    _, state = call("/api/state")
+    assert state["progress"]["compared"] == ["Toy agent (rule-based)"]
 
 
 def test_static_files_cannot_escape(ui):

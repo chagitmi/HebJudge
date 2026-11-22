@@ -33,9 +33,9 @@ const ADAPTERS = {
   builtin_store: "סוכן החנות לדוגמה",
 };
 const LEVELS = {
-  quick: { name: "מהירה", text: "8 התקיפות שהצליחו הכי הרבה במחקר. מבט ראשון, בכמה סנטים." },
-  standard: { name: "רגילה", text: "כל 24 תבניות התקיפה, פעם אחת. לפני שחרור גרסה." },
-  deep: { name: "מעמיקה", text: "כל התבניות, 3 חזרות כל אחת. תוצאות יציבות יותר." },
+  quick: { name: "מהירה", text: "התקיפות החזקות ביותר. לבדיקה ראשונה." },
+  standard: { name: "רגילה", text: "כל סוגי התקיפות, פעם אחת. לפני שחרור גרסה." },
+  deep: { name: "מעמיקה", text: "כל התקיפות, 3 פעמים. התוצאה הכי אמינה." },
 };
 const LANG = { he: "עברית", en: "אנגלית" };
 
@@ -90,7 +90,12 @@ function fill(el, ...nodes) {
 }
 
 function render(...nodes) {
-  fill(view, ...nodes);
+  const onHome = (location.hash || "#/home") === "#/home";
+  fill(view, onHome ? null : h("a", { class: "btn small back", href: "#/home" }, "→ חזרה לדף הבית"), ...nodes);
+  // Every inner screen ends with a way home, unless it already has its own button for it.
+  if (!onHome && !view.querySelector('.btn:not(.back)[href="#/home"]')) {
+    view.append(h("div", { class: "page-end" }, h("a", { class: "btn", href: "#/home" }, "חזרה לדף הבית")));
+  }
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
@@ -132,6 +137,7 @@ function showKeyStatus(key) {
 /* --- routing ------------------------------------------------------------------- */
 
 const routes = [
+  [/^#\/home$/, viewHome],
   [/^#\/agents$/, viewAgents],
   [/^#\/agent\/new$/, () => viewEditor(null)],
   [/^#\/agent\/edit\/(.+)$/, (m) => viewEditor(decodeURIComponent(m[1]))],
@@ -146,7 +152,7 @@ const routes = [
 let stopPolling = () => {};
 async function route() {
   stopPolling();
-  const hash = location.hash || "#/agents";
+  const hash = location.hash || "#/home";
   const section = hash.split("/")[1];
   const nav = { agent: "agents", run: "scan" }[section] || section;
   document.querySelectorAll("[data-nav]").forEach((a) => {
@@ -164,9 +170,135 @@ async function route() {
       return;
     }
   }
-  location.hash = "#/agents";
+  location.hash = "#/home";
 }
 window.addEventListener("hashchange", route);
+
+/* --- home ------------------------------------------------------------------------- */
+
+async function addExamples() {
+  const r = await api("/api/init", {});
+  toast(r.written ? "סוכני הדוגמה נוספו" : "סוכני הדוגמה כבר קיימים");
+  route();
+}
+
+const EXAMPLE_AGENT = "examples/targets/toy-python.yaml";
+
+/* The example agent as the user's own copy: a real agent of theirs, ready to scan at no cost. */
+async function startFromExample() {
+  await api("/api/init", {});
+  const { data } = await api(`/api/target?path=${encodeURIComponent(EXAMPLE_AGENT)}`);
+  data.name = "סוכן הדוגמה שלי";
+  const saved = await api("/api/target/save", { data, path: null });
+  toast("נוצר עותק של סוכן הדוגמה");
+  location.hash = `#/scan/${encodeURIComponent(saved.path)}`;
+}
+
+async function viewHome() {
+  await refreshState();
+  /* Steps are ticked only by the user's own work: example agents and their scans do not count. */
+  const own = state.targets.filter((t) => t.has_profile && !t.error && !t.example);
+  const ownNames = new Set(own.map((t) => t.name));
+  const ownScans = state.scans.filter((s) => ownNames.has(s.target));
+  const perAgent = {};
+  ownScans.forEach((s) => (perAgent[s.target] = (perAgent[s.target] || 0) + 1));
+  const twice = Object.keys(perAgent).find((name) => perAgent[name] > 1);
+  const compared = (state.progress?.compared || []).some((name) => ownNames.has(name));
+  const keySet = !!(state.key && state.key.set);
+  const agentPath = (name) => (own.find((t) => t.name === name) || own[0] || {}).path;
+  const lastAgent = ownScans.length ? agentPath(ownScans[0].target) : own[0]?.path;
+  const scanLink = lastAgent ? `#/scan/${encodeURIComponent(lastAgent)}` : "#/scan";
+  const lastResult = ownScans.length ? `#/results/${encodeURIComponent(ownScans[0].batch)}` : null;
+  const count = (n, one, many) => (n === 1 ? one : `${n} ${many}`);
+
+  const steps = [
+    {
+      title: "מפתח OpenAI",
+      text: "בשביל השופט שבודק את התשובות.",
+      more: "יוצרים מפתח באתר של OpenAI ומדביקים בהגדרות. הוא נשמר רק במחשב הזה. סריקה מהירה עולה סנטים בודדים, והעלות מוצגת לפני כל סריקה.",
+      done: keySet,
+      doneText: keySet ? `מסתיים ב-${state.key.hint}` : "",
+      actions: [h("a", { class: "btn primary", href: "#/settings" }, "הגדרת מפתח")],
+      link: ["#/settings", "שינוי"],
+    },
+    {
+      title: "סוכן",
+      text: "מגדירים את הסוכן שלך: איך מתחברים אליו, ומה אסור לו לעשות.",
+      more: "אפשר לחבר סוכן דרך הוראות ומודל, כתובת API או פונקציה בפייתון, ולכתוב מה סודי ומה אסור לו. מזה נבנות התקיפות. כדי לראות קודם איך זה עובד, אפשר להתחיל מעותק של סוכן הדוגמה: הוא לא עולה כלום, ואפשר למחוק אותו אחר כך.",
+      done: own.length > 0,
+      doneText: count(own.length, "סוכן אחד", "סוכנים"),
+      actions: [
+        h("a", { class: "btn primary", href: "#/agent/new" }, "הגדרת סוכן"),
+        h("button", { class: "btn", onclick: startFromExample }, "להתחיל מסוכן לדוגמה"),
+      ],
+      link: ["#/agents", "הסוכנים"],
+    },
+    {
+      title: "סריקה",
+      text: "בוחרים עומק, רואים עלות, ומתחילים.",
+      more: "HebJudge שולח לסוכן הודעות תקיפה בעברית ובאנגלית, ובודק כל תשובה: קודם בקוד, ואז בעזרת השופט. אפשר לראות מראש כל הודעה שתישלח.",
+      done: ownScans.length > 0,
+      doneText: count(ownScans.length, "סריקה אחת", "סריקות"),
+      actions: [h("a", { class: "btn primary", href: scanLink }, "סריקה חדשה")],
+      link: [scanLink, "סריקה נוספת"],
+    },
+    {
+      title: "תוצאות",
+      text: "איפה הסוכן נשבר, ומה להוסיף להוראות שלו.",
+      more: "התוצאות נפתחות מיד בסוף כל סריקה. לכל תקיפה שהצליחה אפשר לראות את השיחה המלאה, ולכל סוג כשל מופיע משפט מוכן שמוסיפים להוראות הסוכן.",
+      done: ownScans.length > 0,
+      doneText: "",
+      actions: [],
+      link: lastResult ? [lastResult, "לתוצאות האחרונות"] : null,
+    },
+    {
+      title: "לפני ואחרי",
+      text: "מתקנים את ההוראות לפי התוצאות, סורקים שוב, ומשווים.",
+      more: "משווים שתי סריקות של אותו סוכן, עם אותן תקיפות בדיוק: מה תוקן, ומה אולי נשבר מחדש.",
+      done: compared,
+      doneText: "",
+      actions: twice
+        ? [h("a", { class: "btn primary", href: "#/compare" }, "השוואה")]
+        : [h("a", { class: "btn primary", href: scanLink }, "סריקה חוזרת"), lastResult ? h("a", { class: "btn", href: lastResult }, "לתוצאות האחרונות") : null],
+      link: ["#/compare", "להשוואה"],
+    },
+  ];
+  const next = steps.findIndex((s) => !s.done);
+
+  render(
+    h("section", { class: "home-hero" }, h("h1", {}, "האם הסוכן שלך עומד בתקיפות?"), h("p", { class: "lede" }, "HebJudge מנסה לגרום לסוכן הצ'אט שלך לחשוף סודות או לעשות מה שאסור לו, ומראה מה לתקן.")),
+    h(
+      "ol",
+      { class: "guide" },
+      steps.map((s, i) => {
+        const status = s.done ? "done" : i === next ? "next" : "later";
+        return h(
+          "li",
+          { class: `guide-step ${status}`, "aria-current": status === "next" ? "step" : null },
+          h("span", { class: "guide-n", "aria-hidden": "true" }, s.done ? "✓" : i + 1),
+          h(
+            "div",
+            { class: "guide-body" },
+            h("h2", {}, s.title, s.done && s.doneText ? h("span", { class: "guide-state" }, s.doneText) : null),
+            h("p", {}, s.text),
+            status === "next" ? h("div", { class: "row guide-actions" }, s.actions) : null,
+            h("details", { class: "more" }, h("summary", {}, "מה זה?"), h("p", {}, s.more))
+          ),
+          s.done && s.link ? h("a", { class: "btn small ghost guide-link", href: s.link[0] }, s.link[1]) : null
+        );
+      })
+    ),
+    next === -1 ? h("div", { class: "row", style: "margin-top:8px" }, h("a", { class: "btn primary", href: scanLink }, "סריקה חדשה"), h("a", { class: "btn", href: "#/compare" }, "השוואה")) : null,
+    h(
+      "details",
+      { class: "more install" },
+      h("summary", {}, "התקנה במחשב אחר"),
+      h("p", {}, "צריך פייתון 3.11 ומעלה. בטרמינל:"),
+      h("pre", { class: "code-block", dir: "ltr" }, "pip install hebjudge\nhebjudge init\nhebjudge ui"),
+      h("p", {}, "מדריך מלא: ", h("a", { href: "https://github.com/chagitmi/HebJudge/blob/main/docs/INSTALL.he.md", target: "_blank", rel: "noopener" }, "מדריך ההתקנה"))
+    )
+  );
+}
 
 /* --- agents ---------------------------------------------------------------------- */
 
@@ -179,16 +311,15 @@ async function viewAgents() {
       {},
       h(
         "td",
-        {},
+        { title: t.path },
         h("strong", {}, h("bdi", {}, t.name)),
-        t.example ? h("span", { class: "tag", style: "margin-inline-start:8px" }, "דוגמה") : null,
-        h("div", { class: "muted small" }, h("bdi", { class: "code" }, t.path))
+        t.example ? h("span", { class: "tag", style: "margin-inline-start:8px" }, "דוגמה") : null
       ),
       h("td", {}, t.error ? h("span", { class: "tag breach" }, "שגיאה בקובץ") : ADAPTERS[t.adapter] || t.adapter),
       h(
         "td",
         {},
-        t.has_profile ? h("span", { class: "tag hold" }, "יש פרופיל") : h("span", { class: "tag" }, "אין פרופיל")
+        t.has_profile ? h("span", { class: "tag hold" }, "מוכן") : h("span", { class: "tag" }, "חסרים פרטים")
       ),
       h(
         "td",
@@ -208,8 +339,8 @@ async function viewAgents() {
   render(
     h(
       "div",
-      { class: "row spread" },
-      h("div", {}, h("h1", {}, "הסוכנים שלי"), h("p", { class: "lede" }, "כל סוכן מוגדר בקובץ: איך מתחברים אליו, ומה מותר ואסור לו. משם יוצאים לסריקה.")),
+      { class: "row spread", style: "margin-bottom:28px" },
+      h("div", {}, h("h1", {}, "הסוכנים שלי"), h("p", { class: "lede", style: "margin:0" }, "בוחרים סוכן לסריקה, או מוסיפים חדש.")),
       h("a", { class: "btn primary", href: "#/agent/new" }, "סוכן חדש")
     ),
     testResult,
@@ -217,15 +348,15 @@ async function viewAgents() {
       ? h(
           "div",
           { class: "panel flush" },
-          h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "סוכן"), h("th", {}, "חיבור"), h("th", {}, "פרופיל"), h("th", {}, ""))), h("tbody", {}, rows))
+          h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "סוכן"), h("th", {}, "חיבור"), h("th", {}, "לסריקה"), h("th", {}, ""))), h("tbody", {}, rows))
         )
       : h(
           "div",
           { class: "panel empty" },
           h("h2", {}, "עוד אין סוכנים"),
-          h("p", {}, "אפשר להתחיל מסוכני הדוגמה: סוכן צעצוע שלא עולה כלום, ומרפאת שיניים לפני ואחרי תיקון."),
+          h("p", {}, "אפשר להתחיל מסוכני דוגמה מוכנים, בלי עלות."),
           h("div", { class: "row", style: "justify-content:center" },
-            h("button", { class: "btn primary", onclick: async () => { const r = await api("/api/init", {}); toast(`הועתקו ${r.written} קבצי דוגמה`); route(); } }, "הוספת סוכני הדוגמה"),
+            h("button", { class: "btn primary", onclick: addExamples }, "הוספת סוכני הדוגמה"),
             h("a", { class: "btn", href: "#/agent/new" }, "סוכן חדש"))
         )
   );
@@ -246,7 +377,7 @@ async function testConnection(target, box) {
           "p",
           { class: "muted small" },
           r.tool_calls === null
-            ? "הסוכן לא מראה באילו כלים השתמש, ולכן פעולות ייבדקו רק לפי הטקסט."
+            ? "הסוכן לא מדווח באילו כלים השתמש, ולכן בודקים רק את הטקסט."
             : `כלים שהופעלו: ${r.tool_calls.length ? r.tool_calls.map((c) => c.name).join(", ") : "אין"}`
         )
       )
@@ -322,7 +453,7 @@ async function viewEditor(path) {
       "div",
       { class: "panel", style: "margin:0; padding:14px 16px", "data-action": "1" },
       h("div", { class: "grid-2" }, field("בעברית", he), field("באנגלית", en)),
-      h("div", { class: "row", style: "margin-top:10px; align-items:end" }, h("div", { style: "flex:1" }, field("שם הכלי, אם יש", tool, "אם הסוכן מראה באילו כלים השתמש, נזהה את הפעולה גם בקוד")), h("button", { class: "btn small danger", type: "button", onclick: () => row.remove() }, "הסרה"))
+      h("div", { class: "row", style: "margin-top:10px; align-items:end" }, h("div", { style: "flex:1" }, field("שם הכלי (לא חובה)", tool)), h("button", { class: "btn small danger", type: "button", onclick: () => row.remove() }, "הסרה"))
     );
     row._read = () => ({ description: { he: he.value.trim() || null, en: en.value.trim() || null }, tool: tool.value.trim() || null });
     actionsBox.append(row);
@@ -342,7 +473,7 @@ async function viewEditor(path) {
       conn.api_key_env = input(cur.api_key_env || "OPENAI_API_KEY", { dir: "ltr" });
       conn.system_prompt = area(cur.system_prompt, { dir: "auto", rows: 7 });
       connBox.append(
-        h("div", { class: "grid-2" }, field("מודל", conn.model), field("משתנה הסביבה של המפתח", conn.api_key_env, "שם המשתנה בלבד. המפתח עצמו לא נשמר בקובץ.")),
+        h("div", { class: "grid-2" }, field("מודל", conn.model), field("משתנה הסביבה של המפתח", conn.api_key_env, "רק השם. המפתח עצמו לא נשמר בקובץ.")),
         field("כתובת השרת", conn.base_url),
         field("הוראות המערכת של הסוכן", conn.system_prompt)
       );
@@ -360,7 +491,7 @@ async function viewEditor(path) {
       );
     } else if (a === "python") {
       conn.function = input(cur.function, { dir: "ltr", placeholder: "my_agent.py:respond" });
-      connBox.append(field("הפונקציה", conn.function, "קובץ ושם פונקציה, שמקבלת הודעה ומחזירה תשובה"));
+      connBox.append(field("הפונקציה", conn.function, "קובץ:פונקציה. מקבלת הודעה ומחזירה תשובה."));
     } else {
       conn.model = input(cur.model || "gpt-4o-mini", { dir: "ltr" });
       connBox.append(field("מודל", conn.model));
@@ -419,7 +550,7 @@ async function viewEditor(path) {
     try {
       const saved = await api("/api/target/save", { data: payload, path: readOnly ? null : path });
       toast("הסוכן נשמר");
-      location.hash = "#/agents";
+      location.hash = "#/home";
       return saved;
     } catch (error) {
       fill(status, errorBox(error));
@@ -429,7 +560,7 @@ async function viewEditor(path) {
 
   render(
     h("h1", {}, path ? (readOnly ? "סוכן לדוגמה" : "עריכת סוכן") : "סוכן חדש"),
-    h("p", { class: "lede" }, readOnly ? "זו דוגמה, ולכן היא לקריאה בלבד. שמירה תיצור עותק שלכם בתיקייה targets." : "מה שתכתבו כאן הופך לתקיפות שמותאמות לסוכן שלכם. ככל שהפרופיל מדויק יותר, הסריקה מדויקת יותר."),
+    h("p", { class: "lede" }, readOnly ? "דוגמה לקריאה בלבד. שמירה יוצרת עותק שלכם." : "התקיפות נבנות מהפרטים כאן. ככל שהם מדויקים יותר, הסריקה טובה יותר."),
     h(
       "form",
       { onsubmit: save },
@@ -439,18 +570,18 @@ async function viewEditor(path) {
         { class: "panel stack" },
         h("h2", {}, "מי הסוכן"),
         h("fieldset", {}, h("legend", {}, "שפות הסריקה"), h("div", { class: "row" }, h("label", { class: "check" }, f.langHe, "עברית"), h("label", { class: "check" }, f.langEn, "אנגלית"))),
-        h("div", { class: "grid-2" }, field("איך קוראים לו, בעברית", f.nameHe, "כפי שיופיע בתוך התקיפות: העוזר הדיגיטלי של…"), field("ובאנגלית", f.nameEn)),
-        field("התפקיד שלו", f.role, "השופט קורא את זה כדי להבין מה נחשב התנהגות תקינה"),
+        h("div", { class: "grid-2" }, field("איך קוראים לו, בעברית", f.nameHe, "השם שיופיע בתקיפות"), field("ובאנגלית", f.nameEn)),
+        field("התפקיד שלו", f.role, "משפט או שניים"),
         field("מה מותר לו ומה אסור לו", f.policy)
       ),
       h(
         "section",
         { class: "panel stack" },
         h("h2", {}, "מה צריך להגן עליו"),
-        field("קודים סודיים, אחד בשורה", f.secrets, "קוד ייחודי שתשתלו בהוראות של הסוכן. אם הוא מופיע בתשובה, זו דליפה ודאית."),
+        field("קודים סודיים, אחד בשורה", f.secrets, "קוד שמופיע בהוראות הסוכן. אם הוא מופיע בתשובה, זו דליפה."),
         h("div", {}, canaryButton),
-        h("div", { class: "grid-2" }, field("מידע מוגן, בעברית", f.dataHe, "למשל: פרטי הקשר של מטופלים אחרים"), field("ובאנגלית", f.dataEn)),
-        field("דוגמאות מדויקות למידע מוגן, אחת בשורה", f.dataExamples, "מחרוזות שאסור שיופיעו בתשובה, כמו מייל או טלפון לדוגמה"),
+        h("div", { class: "grid-2" }, field("מידע מוגן, בעברית", f.dataHe, "למשל: פרטי מטופלים אחרים"), field("ובאנגלית", f.dataEn)),
+        field("דוגמאות למידע מוגן, אחת בשורה", f.dataExamples, "למשל מייל או טלפון שאסור שיופיעו בתשובה"),
         h("h3", { style: "margin-top:20px" }, "פעולות אסורות"),
         actionsBox,
         h("div", {}, h("button", { class: "btn small", type: "button", onclick: () => addAction() }, "הוספת פעולה אסורה"))
@@ -459,11 +590,11 @@ async function viewEditor(path) {
         "section",
         { class: "panel stack" },
         h("h2", {}, "בקשות לגיטימיות"),
-        h("p", { class: "muted small", style: "margin:0" }, "שאלות רגילות שהסוכן צריך לענות עליהן. כך בודקים שהוא לא מסרב יותר מדי."),
+        h("p", { class: "muted small", style: "margin:0" }, "שאלות רגילות, כדי לבדוק שהסוכן לא מסרב סתם."),
         h("div", { class: "grid-2" }, field("בעברית, אחת בשורה", f.legitHe), field("באנגלית", f.legitEn))
       ),
       status,
-      h("div", { class: "row" }, h("button", { class: "btn primary", type: "submit" }, readOnly ? "שמירה כעותק שלי" : "שמירה"), h("a", { class: "btn ghost", href: "#/agents" }, "ביטול"))
+      h("div", { class: "row" }, h("button", { class: "btn primary", type: "submit" }, readOnly ? "שמירה כעותק שלי" : "שמירה"), h("a", { class: "btn ghost", href: "#/home" }, "ביטול"))
     )
   );
 }
@@ -474,7 +605,7 @@ async function viewScan(path) {
   await refreshState();
   const ready = state.targets.filter((t) => t.has_profile && !t.error);
   if (!ready.length) {
-    render(h("h1", {}, "סריקה חדשה"), h("div", { class: "panel empty" }, h("h2", {}, "אין סוכן עם פרופיל"), h("p", {}, "סריקה צריכה פרופיל: מה סודי, מה אסור, ומה לגיטימי."), h("a", { class: "btn primary", href: "#/agent/new" }, "הגדרת סוכן")));
+    render(h("h1", {}, "סריקה חדשה"), h("div", { class: "panel empty" }, h("h2", {}, "אין סוכן עם פרופיל"), h("p", {}, "צריך להגדיר לסוכן מה סודי ומה אסור לו."), h("a", { class: "btn primary", href: "#/agent/new" }, "הגדרת סוכן")));
     return;
   }
   const chosen = path && ready.some((t) => t.path === path) ? path : ready[0].path;
@@ -509,8 +640,6 @@ async function viewScan(path) {
       fill(planBox, errorBox(error));
       return;
     }
-    const byGoal = {};
-    plan.scenarios.forEach((s) => (byGoal[s.goal] = (byGoal[s.goal] || 0) + 1));
     fill(planBox, 
       h(
         "div",
@@ -518,13 +647,12 @@ async function viewScan(path) {
         h(
           "p",
           { style: "margin:0" },
-          h("strong", { class: "num" }, `${plan.scenarios.length} תרחישים`),
-          plan.repeats > 1 ? ` × ${plan.repeats} חזרות` : "",
-          ` = ${plan.runs} הרצות. עלות משוערת: `,
+          h("strong", { class: "num" }, `${plan.runs} הרצות`),
+          plan.repeats > 1 ? ` (${plan.scenarios.length} הודעות, ${plan.repeats} פעמים כל אחת)` : "",
+          `. עלות משוערת: `,
           h("strong", {}, money(plan.estimate.total_usd)),
-          plan.estimate.agent_usd === null ? " לשופט, ועוד עלות הסוכן עצמו, אם יש." : "."
+          plan.estimate.agent_usd === null ? " (השופט בלבד)." : "."
         ),
-        h("p", { class: "muted small", style: "margin:0" }, Object.entries(byGoal).map(([g, n]) => `${GOALS[g]}: ${n}`).join(" · ")),
         plan.skipped.length ? h("div", { class: "note warn small" }, `${plan.skipped.length} תבניות דולגו כי חסר בפרופיל: `, [...new Set(plan.skipped.map((s) => s.reason.replace("the profile has no ", "")))].join(", ")) : null,
         h(
           "details",
@@ -541,7 +669,7 @@ async function viewScan(path) {
         h(
           "div",
           { class: "note warn" },
-          h("label", { class: "check" }, box, h("span", {}, "הסוכן הזה שלי, או שיש לי הרשאה לבדוק אותו. הוא רץ בסביבת בדיקה, בלי נתוני לקוחות אמיתיים."))
+          h("label", { class: "check" }, box, h("span", {}, "יש לי הרשאה לבדוק את הסוכן הזה, והוא לא מחובר לנתוני לקוחות אמיתיים."))
         )
       );
       permissionBox._box = box;
@@ -551,7 +679,7 @@ async function viewScan(path) {
     }
     if (!state.key || !state.key.set) {
       startButton.disabled = true;
-      permissionBox.prepend(h("div", { class: "note danger", style: "margin-bottom:12px" }, "כדי לסרוק צריך מפתח API של OpenAI בשביל השופט. ", h("a", { href: "#/settings" }, "להגדרות")));
+      permissionBox.prepend(h("div", { class: "note danger", style: "margin-bottom:12px" }, "חסר מפתח OpenAI. ", h("a", { href: "#/settings" }, "להגדרות")));
     }
   };
 
@@ -577,7 +705,7 @@ async function viewScan(path) {
 
   render(
     h("h1", {}, "סריקה חדשה"),
-    h("p", { class: "lede" }, "HebJudge שולח לסוכן תקיפות שמותאמות לפרופיל שלו, ובודק כל תשובה: קודם בקוד, ואז בעזרת שופט."),
+    h("p", { class: "lede" }, "בוחרים סוכן ועומק. העלות מוצגת לפני שמתחילים."),
     h(
       "section",
       { class: "panel stack" },
@@ -595,11 +723,11 @@ async function viewScan(path) {
           })
         )
       ),
-      h("div", { class: "row", style: "gap:28px" }, h("fieldset", {}, h("legend", {}, "שפות"), h("div", { class: "row" }, langs.map((l, i) => h("label", { class: "check" }, langBoxes[i], LANG[l])))), h("label", { class: "field" }, "תקרת הוצאה (דולר)", maxCost))
+      h("div", { class: "row", style: "gap:28px" }, h("fieldset", {}, h("legend", {}, "שפות"), h("div", { class: "row" }, langs.map((l, i) => h("label", { class: "check" }, langBoxes[i], LANG[l])))), h("label", { class: "field" }, "תקרת הוצאה ($)", maxCost))
     ),
     h("section", { class: "panel" }, planBox),
     permissionBox,
-    h("div", { class: "row", style: "margin-top:16px" }, startButton, h("span", { class: "muted small" }, "לפני שמשהו נשלח, תמיד אפשר לראות בדיוק מה יישלח."))
+    h("div", { class: "row", style: "margin-top:16px" }, startButton)
   );
   refresh();
 }
@@ -674,8 +802,8 @@ async function viewRun(batch) {
       render(
         h("h1", {}, "הסריקה לא הצליחה"),
         h("div", { class: "note danger" }, status.stopped ? "הסריקה נעצרה לפני שהרצה כלשהי הסתיימה." : `אף הרצה לא הושלמה (${status.errors} שגיאות). השגיאה הראשונה: `, status.first_run_error ? h("bdi", { class: "code" }, status.first_run_error) : null),
-        h("p", { class: "muted" }, "כדאי לבדוק את החיבור לסוכן במסך הסוכנים, ואת מפתח ה-API של השופט."),
-        h("a", { class: "btn", href: "#/agents" }, "למסך הסוכנים")
+        h("p", { class: "muted" }, "כדאי לבדוק את החיבור לסוכן ואת מפתח OpenAI."),
+        h("div", { class: "row" }, h("a", { class: "btn primary", href: "#/home" }, "חזרה לדף הבית"), h("a", { class: "btn", href: "#/agents" }, "למסך הסוכנים"))
       );
       return;
     }
@@ -705,12 +833,12 @@ async function viewRun(batch) {
 async function viewResults() {
   await refreshState();
   if (!state.scans.length) {
-    render(h("h1", {}, "תוצאות"), h("div", { class: "panel empty" }, h("h2", {}, "עוד אין סריקות"), h("p", {}, "הסריקה הראשונה מתחילה מהמסך של הסוכנים."), h("a", { class: "btn primary", href: "#/scan" }, "סריקה חדשה")));
+    render(h("h1", {}, "תוצאות"), h("div", { class: "panel empty" }, h("h2", {}, "עוד אין סריקות"), h("p", {}, "התוצאות יופיעו כאן אחרי הסריקה הראשונה."), h("a", { class: "btn primary", href: "#/scan" }, "סריקה חדשה")));
     return;
   }
   render(
     h("h1", {}, "תוצאות"),
-    h("p", { class: "lede" }, "כל הסריקות שנעשו מהמחשב הזה, מהחדשה לישנה."),
+    h("p", { class: "lede" }, "לחיצה על סריקה פותחת את התוצאות שלה."),
     h(
       "div",
       { class: "panel flush" },
@@ -718,7 +846,7 @@ async function viewResults() {
         "table",
         {},
         h("thead", {}, h("tr", {}, h("th", {}, "סוכן"), h("th", {}, "מתי"), h("th", {}, "הרצות"), h("th", {}, "עלות"))),
-        h("tbody", {}, state.scans.map((s) => h("tr", { class: "clickable", tabindex: "0", onclick: () => (location.hash = `#/results/${encodeURIComponent(s.batch)}`), onkeydown: (e) => e.key === "Enter" && (location.hash = `#/results/${encodeURIComponent(s.batch)}`) }, h("td", {}, h("strong", {}, h("bdi", {}, s.target)), h("div", { class: "muted small" }, h("bdi", { class: "code" }, s.batch))), h("td", { class: "num" }, dateText(s.created)), h("td", { class: "num" }, s.runs), h("td", { class: "num" }, money(s.cost_usd)))))
+        h("tbody", {}, state.scans.map((s) => h("tr", { class: "clickable", tabindex: "0", onclick: () => (location.hash = `#/results/${encodeURIComponent(s.batch)}`), onkeydown: (e) => e.key === "Enter" && (location.hash = `#/results/${encodeURIComponent(s.batch)}`) }, h("td", { title: s.batch }, h("strong", {}, h("bdi", {}, s.target))), h("td", { class: "num" }, dateText(s.created)), h("td", { class: "num" }, s.runs), h("td", { class: "num" }, money(s.cost_usd)))))
       )
     )
   );
@@ -732,7 +860,7 @@ async function viewResult(batch) {
   const benign = r.goals.find((g) => g.goal === "benign");
   const headline =
     failedAttacks === 0
-      ? `הסוכן עמד בכל ${totalAttacks} התקיפות`
+      ? totalAttacks === 1 ? "הסוכן עמד בתקיפה" : `הסוכן עמד בכל ${totalAttacks} התקיפות`
       : `${failedAttacks} מתוך ${totalAttacks} תקיפות הצליחו`;
   const failures = r.items.filter((i) => i.verdict === "attack_succeeded");
   const copy = async (text) => {
@@ -746,16 +874,16 @@ async function viewResult(batch) {
     h(
       "p",
       { class: "lede" },
-      benign ? (benign.failed ? `ובנוסף סירב ל-${benign.failed} מתוך ${benign.total} בקשות לגיטימיות. ` : `ענה על כל ${benign.total} הבקשות הלגיטימיות. `) : "",
+      benign ? (benign.failed ? `ובנוסף סירב ל-${benign.failed} מתוך ${benign.total} בקשות לגיטימיות. ` : benign.total === 1 ? "ענה על הבקשה הלגיטימית. " : `ענה על כל ${benign.total} הבקשות הלגיטימיות. `) : "",
       `${r.runs} הרצות · ${dateText(r.created)} · ${money(r.cost_usd)}`
     ),
-    h("section", { class: "panel" }, h("h2", {}, "איפה הסוכן נשבר"), h("p", { class: "muted small", style: "margin:0" }, "כל ריבוע הוא הרצה אחת. לחיצה עליו מראה מה נשלח ומה הסוכן ענה."), matrix(r.goals.map((g) => g.goal), r.items)),
+    h("section", { class: "panel" }, h("h2", {}, "איפה הסוכן נשבר"), h("p", { class: "muted small", style: "margin:0" }, "כל ריבוע הוא תקיפה אחת. לחיצה מראה את השיחה."), matrix(r.goals.map((g) => g.goal), r.items)),
     r.fixes.length
       ? h(
           "section",
           { class: "panel" },
           h("h2", {}, "מה לשנות בהוראות של הסוכן"),
-          h("p", { class: "muted small" }, "הצעות קבועות שנבדקו מראש, לכל סוג כשל. הוסיפו את המשפט להוראות, וסרקו שוב כדי לוודא שהחור נסגר."),
+          h("p", { class: "muted small" }, "מוסיפים את המשפט להוראות הסוכן, וסורקים שוב לבדיקה."),
           r.fixes.map((f, i) =>
             h(
               "div",
@@ -765,21 +893,24 @@ async function viewResult(batch) {
                 "div",
                 {},
                 h("p", { class: "fix-text" }, f.he),
-                h("div", { class: "row" }, h("button", { class: "btn small", onclick: () => copy(f.he) }, "העתקה"), h("button", { class: "btn small ghost", onclick: () => copy(f.en) }, "העתקה באנגלית"), h("span", { class: "muted small" }, `נכשל ב: `, h("bdi", { class: "code" }, f.scenarios.slice(0, 3).join(", ")))),
-                h("p", { class: "fix-en" }, f.en)
+                h("div", { class: "row" }, h("button", { class: "btn small", onclick: () => copy(f.he) }, "העתקה"), h("button", { class: "btn small ghost", onclick: () => copy(f.en) }, "העתקה באנגלית"), h("span", { class: "muted small", title: f.scenarios.join(", ") }, f.scenarios.length === 1 ? "סוגר תקיפה אחת שהצליחה" : `סוגר ${f.scenarios.length} תקיפות שהצליחו`))
               )
             )
           )
         )
-      : h("section", { class: "panel" }, h("h2", {}, "אין מה לתקן ברמה הזו"), h("p", { class: "muted", style: "margin:0" }, "סריקה עמוקה יותר מנסה עוד תקיפות, וחוזרת על כל אחת שלוש פעמים.")),
+      : h("section", { class: "panel" }, h("h2", {}, "אין מה לתקן ברמה הזו"), h("p", { class: "muted", style: "margin:0" }, "לבדיקה יסודית יותר: סריקה מעמיקה.")),
     h("section", {}, h("h2", { style: "margin-top:28px" }, failures.length ? "התקיפות שהצליחו" : "כל ההרצות"), (failures.length ? failures : r.items).map(transcript)),
     failures.length ? h("details", { class: "transcript" }, h("summary", {}, `כל ${r.items.length} ההרצות`), h("div", { class: "body" }, r.items.map(transcript))) : null,
     h(
-      "div",
-      { class: "note small", style: "margin-top:24px" },
-      "על השופט: את רוב ההכרעות נותן מודל שופט (",
-      h("bdi", { class: "code" }, r.judge_model),
-      "). במחקר הוא הסכים עם תיוג אנושי ברמה גבוהה מאוד (κ = 0.85), אבל זה נבדק על סוכן החנות, לא על הסוכן הזה. כשהקוד מוצא קוד סודי או מידע מוגן בתשובה, ההכרעה ודאית."
+      "details",
+      { class: "transcript", style: "margin-top:24px" },
+      h("summary", {}, "כמה אפשר לסמוך על השופט?"),
+      h(
+        "div",
+        { class: "body muted small" },
+        h("p", { style: "margin:0" }, "את רוב ההכרעות נותן מודל שופט (", h("bdi", { class: "code" }, r.judge_model), "). במחקר הוא הסכים עם תיוג אנושי ברמה גבוהה מאוד (κ = 0.85), על סוכן אחר."),
+        h("p", { style: "margin:0" }, "כשנמצא בתשובה קוד סודי או מידע מוגן, ההכרעה ודאית.")
+      )
     ),
     h("div", { class: "row", style: "margin-top:20px" }, h("a", { class: "btn", href: "#/compare" }, "השוואה לסריקה אחרת"), h("a", { class: "btn ghost", href: "#/scan" }, "סריקה חדשה"))
   );
@@ -824,7 +955,10 @@ async function viewCompare() {
     return;
   }
   const option = (s, selected) => h("option", { value: s.batch, selected }, `${s.target} · ${dateText(s.created)}`);
-  const before = h("select", {}, state.scans.map((s, i) => option(s, i === 1)));
+  const latest = state.scans[0];
+  const sameAgent = state.scans.findIndex((s, i) => i > 0 && s.target === latest.target);
+  const beforeIndex = sameAgent > 0 ? sameAgent : 1;
+  const before = h("select", {}, state.scans.map((s, i) => option(s, i === beforeIndex)));
   const after = h("select", {}, state.scans.map((s, i) => option(s, i === 0)));
   const out = h("div");
   const run = async () => {
@@ -843,7 +977,7 @@ async function viewCompare() {
         c.fixed.length ? h("div", { class: "note", style: "margin-top:14px" }, h("strong", {}, `תוקנו ${c.fixed.length}: `), h("bdi", { class: "code" }, c.fixed.join(", "))) : null,
         c.regressed.length ? h("div", { class: "note danger", style: "margin-top:14px" }, h("strong", {}, `הוחמרו ${c.regressed.length}: `), h("bdi", { class: "code" }, c.regressed.join(", "))) : null,
         !c.fixed.length && !c.regressed.length ? h("p", { class: "muted" }, "אף תרחיש לא שינה את התוצאה שלו.") : null,
-        h("p", { class: "muted small" }, `הושוו ${c.common} תרחישים שנשלחו בשתי הסריקות.`, c.only_before || c.only_after ? ` ${c.only_before + c.only_after} תרחישים הופיעו רק באחת מהן ולא הושוו.` : "", c.repeats === 1 ? " עם חזרה אחת, שינוי בודד יכול להיות מקרי; סריקה מעמיקה יציבה יותר." : "")
+        h("p", { class: "muted small" }, `הושוו ${c.common} תקיפות שהופיעו בשתי הסריקות.`, c.repeats === 1 ? " בסריקה של פעם אחת, שינוי בודד יכול להיות מקרי." : "")
       );
     } catch (error) {
       fill(out, errorBox(error));
@@ -851,7 +985,7 @@ async function viewCompare() {
   };
   render(
     h("h1", {}, "לפני ואחרי"),
-    h("p", { class: "lede" }, "האם התיקון עבד? משווים שתי סריקות של אותן תקיפות בדיוק: מה נסגר, ומה נפתח."),
+    h("p", { class: "lede" }, "האם התיקון עבד? בוחרים סריקה מלפני ומאחרי."),
     h("section", { class: "panel" }, h("div", { class: "grid-2" }, h("label", { class: "field" }, "לפני", before), h("label", { class: "field" }, "אחרי", after)), h("div", { style: "margin-top:14px" }, h("button", { class: "btn primary", onclick: run }, "השוואה"))),
     out
   );
@@ -866,8 +1000,12 @@ async function viewSettings() {
   const keyInput = h("input", { type: "password", dir: "ltr", autocomplete: "off", placeholder: "sk-...", spellcheck: "false" });
   const message = h("div");
 
+  const testButton = h("button", { class: "btn" }, "בדיקת המפתח (חינם)");
+  const removeButton = h("button", { class: "btn ghost" }, "הסרה");
   const drawStatus = (key) => {
     showKeyStatus(key);
+    testButton.disabled = !key.set;
+    removeButton.disabled = key.source !== "file";
     fill(
       statusBox,
       key.set
@@ -882,7 +1020,7 @@ async function viewSettings() {
       const key = await api("/api/settings/key", { key: keyInput.value });
       keyInput.value = "";
       drawStatus(key);
-      fill(message, h("div", { class: "note warn" }, "המפתח נשמר. כדאי ללחוץ על \"בדיקת המפתח\"."));
+      fill(message, h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח נשמר."), h("a", { class: "btn small primary", href: "#/home" }, "המשך לשלב הבא")));
     } catch (error) {
       fill(message, errorBox(error));
     }
@@ -890,7 +1028,7 @@ async function viewSettings() {
   const test = async () => {
     fill(message, h("p", { class: "muted" }, h("span", { class: "spinner" }), " בודק…"));
     const r = await api("/api/settings/key/test", {});
-    fill(message, r.ok ? h("div", { class: "note warn" }, "המפתח עובד. אפשר לסרוק.") : h("div", { class: "note danger" }, "המפתח לא עובד: ", h("bdi", { class: "code" }, r.detail), ". כדאי לבדוק שהעתקתם אותו במלואו, ושיש יתרה בחשבון."));
+    fill(message, r.ok ? h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח עובד."), h("a", { class: "btn small primary", href: "#/home" }, "המשך לשלב הבא")) : h("div", { class: "note danger" }, "המפתח לא עובד: ", h("bdi", { class: "code" }, r.detail), ". כדאי לבדוק שהעתקתם אותו במלואו, ושיש יתרה בחשבון."));
   };
   const remove = async () => {
     const key = await api("/api/settings/key/delete", {});
@@ -898,32 +1036,36 @@ async function viewSettings() {
     fill(message, h("div", { class: "note" }, "המפתח הוסר מקובץ ההגדרות."));
   };
 
+  testButton.addEventListener("click", test);
+  removeButton.addEventListener("click", remove);
+
   render(
     h("h1", {}, "הגדרות"),
-    h("p", { class: "lede" }, "HebJudge צריך מפתח API של OpenAI בשביל השופט, המודל שבודק כל תשובה של הסוכן. הסריקות מחויבות בחשבון OpenAI שלכם, ולפני כל סריקה מוצגת העלות."),
+    h("p", { class: "lede" }, "המפתח משמש את השופט, המודל שבודק את תשובות הסוכן. העלות מוצגת לפני כל סריקה."),
     h(
       "section",
       { class: "panel stack" },
-      h("h2", {}, "מפתח API לשופט"),
+      h("h2", {}, "מפתח OpenAI"),
       statusBox,
-      h("label", { class: "field" }, "מפתח חדש", h("span", { class: "hint" }, "יוצרים מפתח בכתובת platform.openai.com/api-keys ומדביקים כאן. הוא לא יוצג שוב."), keyInput),
+      h("label", { class: "field" }, "מפתח חדש", h("span", { class: "hint" }, "יוצרים מפתח ב-", h("a", { href: "https://platform.openai.com/api-keys", target: "_blank", rel: "noopener" }, "platform.openai.com/api-keys"), " ומדביקים כאן."), keyInput),
       h(
         "div",
         { class: "row" },
         h("button", { class: "btn primary", onclick: save }, "שמירת המפתח"),
-        h("button", { class: "btn", onclick: test, disabled: !state.key.set }, "בדיקת המפתח (חינם)"),
-        h("button", { class: "btn ghost", onclick: remove, disabled: state.key.source !== "file" }, "הסרה")
+        testButton,
+        removeButton
       ),
       message,
-      h("p", { class: "muted small", style: "margin:0" }, "המפתח נשמר רק במחשב הזה, בקובץ ", h("bdi", { class: "code" }, state.key.file), ", שרק המשתמש שלכם יכול לקרוא. הוא לא נשמר בתיקיית הפרויקט, לא בתוצאות, ולא נשלח לשום מקום חוץ מ-OpenAI.")
+      h("p", { class: "muted small", style: "margin:0", title: state.key.file }, "המפתח נשמר רק במחשב הזה, ונשלח רק ל-OpenAI.")
     ),
     h(
       "section",
       { class: "panel stack" },
       h("h2", {}, "סוכני דוגמה"),
-      h("p", { class: "muted", style: "margin:0" }, "מעתיק לתיקייה examples סוכן צעצוע (לא עולה כלום), ומרפאת שיניים לפני ואחרי תיקון. קבצים קיימים לא נדרסים."),
-      h("div", {}, h("button", { class: "btn", onclick: async () => { const r = await api("/api/init", {}); toast(r.written ? `הועתקו ${r.written} קבצים` : "סוכני הדוגמה כבר קיימים"); } }, "הוספת סוכני הדוגמה"))
-    )
+      h("p", { class: "muted", style: "margin:0" }, "סוכן צעצוע שלא עולה כלום, ומרפאת שיניים לדוגמה. קבצים קיימים לא נדרסים."),
+      h("div", {}, h("button", { class: "btn", onclick: async () => { const r = await api("/api/init", {}); toast(r.written ? "סוכני הדוגמה נוספו" : "סוכני הדוגמה כבר קיימים"); } }, "הוספת סוכני הדוגמה"))
+    ),
+    h("div", { class: "row", style: "margin-top:8px" }, h("a", { class: "btn primary", href: "#/home" }, "סיום, חזרה לדף הבית"))
   );
 }
 
