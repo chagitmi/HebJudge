@@ -12,6 +12,7 @@ from pathlib import Path
 REQUIRED = [
     "hebjudge/ui/static/index.html",
     "hebjudge/ui/static/app.js",
+    "hebjudge/ui/static/guided.js",
     "hebjudge/ui/static/fonts/plex-hebrew-400.woff2",
     "hebjudge/_examples/targets/toy-python.yaml",
     "hebjudge/_examples/toy_agent.py",

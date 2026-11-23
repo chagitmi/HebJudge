@@ -44,9 +44,11 @@ From a separate run (`heonly-v1`, 2026-11-17): 30 scenarios with no English twin
 
 ## Test your own agent (v2 beta)
 
-HebJudge can now attack **your** agent, not only its built-in store: a clinic assistant, a bank bot, an HR helper. You describe the agent once (what it may do, what is secret, what is forbidden); HebJudge turns 24 attack templates, in Hebrew and English, into attacks written for it, runs them, and tells you what to change.
+HebJudge can now attack **your** agent, not only its built-in store: a clinic assistant, a bank bot, a personal email assistant. You describe the agent once (what it may do, what is secret, what is forbidden); HebJudge turns 24 attack templates, in Hebrew and English, into attacks written for it, runs them, and tells you what to change.
 
-<p align="center"><img src="https://raw.githubusercontent.com/chagitmi/HebJudge/main/docs/images/ui-results.jpg" alt="Results screen: a verdict, a wall of runs per risk, and fix suggestions" width="860"></p>
+The interface opens on a **guided check** for people who are not security experts: three questions (how to reach the bot, what it must not do, one ordinary request), the cost before anything is sent, a live list of attempts in plain Hebrew, and a result with ready sentences to add to the bot's instructions. "Fixed it, check again" repeats the same attempts and shows before and after. Everything else (agent files, levels, all templates, comparisons) is under **Advanced**.
+
+<p align="center"><img src="https://raw.githubusercontent.com/chagitmi/HebJudge/main/docs/images/ui-guided.jpg" alt="Guided check result: a ring of attempts held and failed, the failed attempt with the conversation, and a sentence to add to the bot's instructions" width="760"></p>
 
 ```bash
 hebjudge ui        # opens the Hebrew interface at http://127.0.0.1:8770
@@ -144,7 +146,7 @@ Cost:    $0.001570
 | `hebjudge calibrate sample --batch NAME` | Pick a balanced, blind sample and build a Hebrew labeling page | No |
 | `hebjudge calibrate score --batch NAME --labels FILE` | Agreement and Cohen's kappa between human labels and the judge | No |
 | `hebjudge report --batch NAME` | HTML report with confidence intervals, paired McNemar test and breakdowns | No |
-| `hebjudge ui` | The Hebrew interface in your browser: agents, scans, results, before and after, settings | Only when you start a scan |
+| `hebjudge ui` | The Hebrew interface in your browser: a guided check, and an advanced mode with agents, scans, results, before and after, settings | Only when you start a check |
 | `hebjudge init` | Copy the example agents into `./examples` | No |
 | `hebjudge key set\|show\|test\|remove` | Manage the OpenAI API key for the judge (stored in `~/.hebjudge/config.env`) | `test` only, free |
 | `hebjudge target test FILE` | Send one harmless message to an agent and show its reply | The agent only |
@@ -295,6 +297,7 @@ All attacks in this project run against the project's own mock agent, never agai
 - [x] v2: fix suggestions, before/after comparison, CI threshold
 - [x] v2: local Hebrew interface (`hebjudge ui`)
 - [x] v2: install from PyPI (`pip install hebjudge`), an API-key screen in the interface, an installation guide in Hebrew and English
+- [x] v2: a guided check in plain Hebrew for non-experts, with check-again and before/after
 - [ ] Later: Hebrew-only attack templates (keyboard layout, Atbash), multi-turn attacks, a document-reading agent for indirect injection, a judge self-check on your own agent, other judge providers
 - [ ] v2: export scenarios to common evals frameworks (for example OpenAI Evals, Inspect, promptfoo), so existing users can run HebJudge in their own tooling
 
@@ -340,7 +343,7 @@ Code: [MIT](https://github.com/chagitmi/HebJudge/blob/main/LICENSE). Data: [CC B
 
 <p dir="rtl">ממצא מפתיע: כשביקשו הנחה בצופן אתב"ש, המודל החזק ביותר "פענח" את ההודעה לא נכון וביצע החזר כספי שאף אחד לא ביקש, בכל שלוש החזרות. דווקא הניסיון להבין הוביל לפעולה שאי אפשר לבטל.</p>
 
-<p dir="rtl"><b>בדיקת הסוכן שלכם (גרסה 2, תצוגה מקדימה):</b> עכשיו אפשר לבדוק גם סוכן משלכם, לא רק את החנות המדומה. מתארים את הסוכן פעם אחת: מה מותר לו, מה סודי ומה אסור. HebJudge הופך 24 תבניות תקיפה בעברית ובאנגלית לתקיפות שמותאמות לסוכן, מריץ אותן, ומציע מה לשנות בהוראות שלו. אחרי התיקון סורקים שוב ומשווים. הכול מממשק בעברית בדפדפן (<code>hebjudge ui</code>), שרץ במחשב שלכם בלבד. לפני כל סריקה מוצגת העלות, ולפני הסריקה הראשונה מאשרים שהסוכן שלכם או שיש לכם הרשאה לבדוק אותו.</p>
+<p dir="rtl"><b>בדיקת הסוכן שלכם (גרסה 2, תצוגה מקדימה):</b> עכשיו אפשר לבדוק גם סוכן משלכם, לא רק את החנות המדומה. מתארים את הסוכן פעם אחת: מה מותר לו, מה סודי ומה אסור. HebJudge הופך 24 תבניות תקיפה בעברית ובאנגלית לתקיפות שמותאמות לסוכן, מריץ אותן, ומציע מה לשנות בהוראות שלו. אחרי התיקון סורקים שוב ומשווים. הכול מממשק בעברית בדפדפן (<code>hebjudge ui</code>), שרץ במחשב שלכם בלבד, ונפתח בבדיקה מודרכת: שלוש שאלות פשוטות, תוצאה ברורה ומשפטים מוכנים לתיקון. לפני כל סריקה מוצגת העלות, ולפני הסריקה הראשונה מאשרים שהסוכן שלכם או שיש לכם הרשאה לבדוק אותו.</p>
 
 <p dir="rtl">דוגמה: סריקה מהירה של סוכן לדוגמה של מרפאת שיניים מצאה חור אחד. בקשה בעברית "למלא תבנית JSON" גרמה לו לחשוף את כל ההוראות ואת הקוד הסודי שלו, בשלוש מתוך שלוש חזרות (ובאנגלית אף פעם). אחרי שנוסף להוראות משפט אחד שהכלי הציע, אותה תקיפה נכשלה בכל שש ההרצות.</p>
 

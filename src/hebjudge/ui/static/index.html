@@ -11,7 +11,7 @@
 </head>
 <body>
 <header class="bench">
-  <a class="mark" href="#/home" aria-label="HebJudge, דף הבית">
+  <a class="mark" href="#/" aria-label="HebJudge, דף הבית">
     <svg class="mark-icon" viewBox="0 0 64 64" aria-hidden="true">
       <circle cx="26" cy="26" r="18.5" fill="none" stroke="currentColor" stroke-width="5.5"/>
       <circle cx="26" cy="26" r="14.2" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
@@ -22,7 +22,7 @@
     </svg>
     <span class="mark-word"><span class="heb">Heb</span><span class="judge">Judge</span></span>
   </a>
-  <nav aria-label="שלבי העבודה">
+  <nav class="advanced-only" aria-label="שלבי העבודה">
     <ol class="steps">
       <li><a href="#/settings" data-nav="settings"><span class="step-n">1</span>מפתח<span class="key-dot" id="key-dot" aria-hidden="true"></span></a></li>
       <li><a href="#/agents" data-nav="agents"><span class="step-n">2</span>סוכן</a></li>
@@ -32,11 +32,17 @@
     </ol>
   </nav>
   <div class="bench-side">
+    <div class="g-toplinks">
+      <a class="guided-only" href="#/checks">הבדיקות הקודמות שלי</a>
+      <a class="guided-only" href="#/home">מצב מתקדם</a>
+      <a class="advanced-only" href="#/">לבדיקה המודרכת</a>
+    </div>
     <p class="bench-meta">רץ במחשב שלך בלבד · <bdi>v__HEBJUDGE_VERSION__</bdi></p>
   </div>
 </header>
 <main id="view" tabindex="-1"></main>
 <div id="toast" role="status" aria-live="polite"></div>
+<script src="/guided.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -64,7 +64,12 @@ async function api(path, body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  const response = await fetch(path, options);
+  let response;
+  try {
+    response = await fetch(path, options);
+  } catch {
+    throw new Error("אין חיבור ל-HebJudge. ייתכן שחלון הטרמינל שבו הוא רץ נסגר. מפעילים שוב: hebjudge ui");
+  }
   const data = await response.json().catch(() => ({ error: "תשובה לא תקינה מהשרת" }));
   if (!response.ok) throw new Error(data.error || `שגיאה ${response.status}`);
   return data;
@@ -89,12 +94,17 @@ function fill(el, ...nodes) {
   el.replaceChildren(...nodes.flat().filter((n) => n !== null && n !== undefined && n !== false));
 }
 
+/* Where "back home" leads: the guided check, or the advanced home, depending on where the
+   person came from. Settings is shared, so it keeps the previous choice. */
+let homeHash = "#/";
+const isGuided = (hash) => hash === "" || hash === "#/" || hash === "#/checks" || hash.startsWith("#/check/");
+
 function render(...nodes) {
-  const onHome = (location.hash || "#/home") === "#/home";
-  fill(view, onHome ? null : h("a", { class: "btn small back", href: "#/home" }, "→ חזרה לדף הבית"), ...nodes);
+  const onHome = (location.hash || "#/") === "#/home";
+  fill(view, onHome ? null : h("a", { class: "btn small back", href: homeHash }, "→ חזרה לדף הבית"), ...nodes);
   // Every inner screen ends with a way home, unless it already has its own button for it.
-  if (!onHome && !view.querySelector('.btn:not(.back)[href="#/home"]')) {
-    view.append(h("div", { class: "page-end" }, h("a", { class: "btn", href: "#/home" }, "חזרה לדף הבית")));
+  if (!onHome && !view.querySelector(`.btn:not(.back)[href="${homeHash}"]`)) {
+    view.append(h("div", { class: "page-end" }, h("a", { class: "btn", href: homeHash }, "חזרה לדף הבית")));
   }
   view.focus({ preventScroll: true });
   window.scrollTo(0, 0);
@@ -137,6 +147,15 @@ function showKeyStatus(key) {
 /* --- routing ------------------------------------------------------------------- */
 
 const routes = [
+  [/^(#\/?)?$/, viewWelcome],
+  [/^#\/checks$/, viewChecks],
+  [/^#\/check\/bot$/, () => viewBot(null)],
+  [/^#\/check\/bot\/(.+)$/, (m) => viewBot(decodeURIComponent(m[1]))],
+  [/^#\/check\/rules$/, viewRules],
+  [/^#\/check\/ready$/, viewReady],
+  [/^#\/check\/run\/(.+)$/, (m) => viewGuidedRun(decodeURIComponent(m[1]))],
+  [/^#\/check\/result\/(.+)$/, (m) => viewGuidedResult(decodeURIComponent(m[1]))],
+  [/^#\/check\/again\/(.+)$/, (m) => viewAgain(decodeURIComponent(m[1]))],
   [/^#\/home$/, viewHome],
   [/^#\/agents$/, viewAgents],
   [/^#\/agent\/new$/, () => viewEditor(null)],
@@ -152,7 +171,11 @@ const routes = [
 let stopPolling = () => {};
 async function route() {
   stopPolling();
-  const hash = location.hash || "#/home";
+  const hash = location.hash || "#/";
+  const guided = isGuided(hash);
+  if (guided) homeHash = "#/";
+  else if (hash !== "#/settings") homeHash = "#/home";
+  document.body.classList.toggle("guided", guided || (hash === "#/settings" && homeHash === "#/"));
   const section = hash.split("/")[1];
   const nav = { agent: "agents", run: "scan" }[section] || section;
   document.querySelectorAll("[data-nav]").forEach((a) => {
@@ -165,12 +188,13 @@ async function route() {
       try {
         await handler(match);
       } catch (error) {
-        render(errorBox(error));
+        if (isGuided(hash)) guidedProblemPage(error);
+        else render(errorBox(error));
       }
       return;
     }
   }
-  location.hash = "#/home";
+  location.hash = "#/";
 }
 window.addEventListener("hashchange", route);
 
@@ -266,7 +290,7 @@ async function viewHome() {
   const next = steps.findIndex((s) => !s.done);
 
   render(
-    h("section", { class: "home-hero" }, h("h1", {}, "האם הסוכן שלך עומד בתקיפות?"), h("p", { class: "lede" }, "HebJudge מנסה לגרום לסוכן הצ'אט שלך לחשוף סודות או לעשות מה שאסור לו, ומראה מה לתקן.")),
+    h("section", { class: "home-hero" }, h("h1", {}, "מצב מתקדם"), h("p", { class: "lede" }, "קובצי סוכן, רמות סריקה, כל התבניות והשוואות. לבדיקה פשוטה יותר: ", h("a", { href: "#/" }, "הבדיקה המודרכת"), ".")),
     h(
       "ol",
       { class: "guide" },
@@ -1020,7 +1044,7 @@ async function viewSettings() {
       const key = await api("/api/settings/key", { key: keyInput.value });
       keyInput.value = "";
       drawStatus(key);
-      fill(message, h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח נשמר."), h("a", { class: "btn small primary", href: "#/home" }, "המשך לשלב הבא")));
+      fill(message, h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח נשמר."), h("a", { class: "btn small primary", href: homeHash }, "המשך")));
     } catch (error) {
       fill(message, errorBox(error));
     }
@@ -1028,7 +1052,7 @@ async function viewSettings() {
   const test = async () => {
     fill(message, h("p", { class: "muted" }, h("span", { class: "spinner" }), " בודק…"));
     const r = await api("/api/settings/key/test", {});
-    fill(message, r.ok ? h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח עובד."), h("a", { class: "btn small primary", href: "#/home" }, "המשך לשלב הבא")) : h("div", { class: "note danger" }, "המפתח לא עובד: ", h("bdi", { class: "code" }, r.detail), ". כדאי לבדוק שהעתקתם אותו במלואו, ושיש יתרה בחשבון."));
+    fill(message, r.ok ? h("div", { class: "note warn row spread", style: "align-items:center" }, h("span", {}, "המפתח עובד."), h("a", { class: "btn small primary", href: homeHash }, "המשך")) : h("div", { class: "note danger" }, "המפתח לא עובד: ", h("bdi", { class: "code" }, r.detail), ". כדאי לבדוק שהעתקתם אותו במלואו, ושיש יתרה בחשבון."));
   };
   const remove = async () => {
     const key = await api("/api/settings/key/delete", {});
@@ -1065,7 +1089,7 @@ async function viewSettings() {
       h("p", { class: "muted", style: "margin:0" }, "סוכן צעצוע שלא עולה כלום, ומרפאת שיניים לדוגמה. קבצים קיימים לא נדרסים."),
       h("div", {}, h("button", { class: "btn", onclick: async () => { const r = await api("/api/init", {}); toast(r.written ? "סוכני הדוגמה נוספו" : "סוכני הדוגמה כבר קיימים"); } }, "הוספת סוכני הדוגמה"))
     ),
-    h("div", { class: "row", style: "margin-top:8px" }, h("a", { class: "btn primary", href: "#/home" }, "סיום, חזרה לדף הבית"))
+    h("div", { class: "row", style: "margin-top:8px" }, h("a", { class: "btn primary", href: homeHash }, "סיום, חזרה לדף הבית"))
   );
 }
 

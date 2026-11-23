@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-from hebjudge import __version__, scan, settings
+from hebjudge import __version__, plain, scan, settings, wizard
 from hebjudge.compare import batch_verdicts, compare
 from hebjudge.fixes import suggest
 from hebjudge.judge import JUDGE_MODEL
@@ -85,7 +85,7 @@ class App:
         """A target path the UI may read or write: a .yaml file inside the project folder."""
         path = (self.root / relative).resolve()
         if self.root.resolve() not in path.parents or path.suffix not in (".yaml", ".yml"):
-            raise ApiError("only .yaml files inside the project folder are allowed")
+            raise ApiError("אפשר לפתוח רק קובצי yaml מתוך תיקיית הפרויקט.")
         return path
 
     def relative(self, path: Path) -> str:
@@ -116,7 +116,7 @@ class App:
     def load(self, relative: str) -> TargetFile:
         path = self.resolve(relative)
         if not path.is_file():
-            raise ApiError("target file not found", 404)
+            raise ApiError("הקובץ של הבוט לא נמצא. אולי הוא נמחק או הועבר.", 404)
         try:
             return load_target_file(path)
         except ValueError as exc:
@@ -130,7 +130,7 @@ class App:
         if relative:
             path = self.resolve(relative)
             if "examples" in path.parts:
-                raise ApiError("examples are read-only; save under a new name")
+                raise ApiError("אי אפשר לשנות את קובצי הדוגמה. שומרים בשם חדש.")
         else:
             slug = re.sub(r"[^a-z0-9]+", "-", target_file.name.lower()).strip("-") or "agent"
             path = self.root / NEW_TARGETS_DIR / f"{slug}.yaml"
@@ -155,10 +155,14 @@ class App:
             raise ApiError("לקובץ הזה אין פרופיל, וסריקה צריכה פרופיל")
         level = scan.LEVELS.get(body.get("level", "quick"))
         if level is None:
-            raise ApiError("unknown level")
+            raise ApiError("עומק הבדיקה לא מוכר.")
+        templates = load_templates()
+        goals = body.get("goals")
+        if goals:
+            templates = [t for t in templates if t.attacker_goal in goals]
         try:
             scenarios, skipped = scan.select_scenarios(
-                target_file.profile, load_templates(), level, body.get("languages") or None
+                target_file.profile, templates, level, body.get("languages") or None
             )
         except ValueError as exc:
             raise ApiError(str(exc)) from exc
@@ -169,7 +173,7 @@ class App:
 
     def start_scan(self, body: dict) -> str:
         if not settings.key_status()["set"]:
-            raise ApiError("חסר מפתח API לשופט. אפשר להוסיף אותו במסך ההגדרות.")
+            raise ApiError("חסר מפתח OpenAI לשופט. מוסיפים אותו במסך הפתיחה, או בהגדרות.")
         target_file, scenarios, level, _, estimate = self.plan(body)
         permissions = self.db_path.parent / "permissions.json"
         if not scan.has_permission(permissions, target_file):
@@ -183,6 +187,18 @@ class App:
             build_target(target_file)  # fail now, before the background thread starts
         except (ValueError, TargetError) as exc:
             raise ApiError(str(exc)) from exc
+
+        if wizard.answers_path(self.root / body["path"]).is_file():
+            answers = wizard.load(self.root, body["path"])
+            answers.last_scan = {
+                "level": level.name,
+                "languages": body.get("languages"),
+                "goals": body.get("goals"),
+            }
+            wizard.answers_path(self.root / body["path"]).write_text(
+                json.dumps(answers.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
 
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
         batch = f"scan-{stamp}-{uuid.uuid4().hex[:4]}"
@@ -226,7 +242,7 @@ class App:
     def job_status(self, batch: str) -> dict:
         job = self.jobs.get(batch)
         if job is None:
-            raise ApiError("scan not found", 404)
+            raise ApiError("הבדיקה הזו לא נמצאה.", 404)
         with job.lock:
             items = list(job.items)
             status = {
@@ -285,7 +301,9 @@ class App:
             for f in suggest(scan.failures(records, scenarios))
         ]
         rate = scan.attack_success_rate(records)
+        items = [_run_item(r, by_id.get(r.scenario_id)) for r in records]
         return {
+            **_plain_summary(items, suggest(scan.failures(records, scenarios))),
             "batch": batch,
             "target": records[0].agent_model.removeprefix("target:"),
             "created": records[0].created_at,
@@ -294,9 +312,61 @@ class App:
             "attack_rate": None if rate is None else round(rate, 1),
             "goals": goals,
             "fixes": fixes,
-            "items": [_run_item(r, by_id.get(r.scenario_id)) for r in records],
+            "items": items,
             "judge_model": JUDGE_MODEL,
         }
+
+    # Guided checks ----------------------------------------------------------------------
+
+    def save_wizard(self, data: dict, relative: str | None) -> str:
+        try:
+            answers = wizard.Answers.model_validate(data)
+        except ValueError as exc:
+            raise ApiError(wizard.friendly_error(exc)) from exc
+        if answers.mode == "example" and not (self.root / wizard.EXAMPLE_TARGET).is_file():
+            from hebjudge.examples_init import copy_examples
+
+            copy_examples(self.root / "examples")
+        try:
+            return wizard.save(answers, self.root, relative)
+        except ValueError as exc:
+            raise ApiError(wizard.friendly_error(exc)) from exc
+
+    def checks(self) -> list[dict]:
+        """The guided checks, newest first, each with its last scan."""
+        by_target: dict[str, dict] = {}
+        for s in self.scans():
+            by_target.setdefault(s["target"], s)
+        found = []
+        directory = self.root / wizard.WIZARD_DIR
+        for answers_file in directory.glob("*" + wizard.ANSWERS_SUFFIX):
+            target = answers_file.with_name(answers_file.name.removesuffix(wizard.ANSWERS_SUFFIX))
+            target = target.with_suffix(".yaml")
+            if not target.is_file():
+                continue
+            try:
+                answers = wizard.Answers.model_validate_json(answers_file.read_text("utf-8"))
+            except ValueError:
+                continue
+            last = by_target.get(answers.name)
+            summary = None
+            if last:
+                try:
+                    result = self.result(last["batch"])
+                    summary = {k: result[k] for k in ("held", "failed", "attempts", "benign")}
+                except ApiError:
+                    summary = None
+            found.append(
+                {
+                    "path": self.relative(target),
+                    "name": answers.name,
+                    "mode": answers.mode,
+                    "last": last,
+                    "summary": summary,
+                    "modified": target.stat().st_mtime,
+                }
+            )
+        return sorted(found, key=lambda c: -(c["modified"]))
 
     # Progress shown on the home screen ------------------------------------------------
 
@@ -357,6 +427,8 @@ class App:
 
 def _run_item(record: RunRecord, scenario) -> dict:
     verdict, decided_by = final_verdict(asdict(record))
+    goal = (scenario.attacker_goal if scenario else None) or "benign"
+    technique = scenario.technique if scenario else None
     tool_calls = json.loads(record.tool_calls)
     return {
         "scenario_id": record.scenario_id,
@@ -372,6 +444,50 @@ def _run_item(record: RunRecord, scenario) -> dict:
         "decided_by": decided_by,
         "rationale": record.judge_rationale,
         "cost_usd": record.cost_usd,
+        "plain": plain.attempt(goal, technique),
+        "outcome": plain.outcome(goal, verdict),
+    }
+
+
+def _plain_summary(items: list[dict], fixes: list) -> dict:
+    """The guided result: how many attempts the bot withstood, and one issue per fix."""
+    decided = [i for i in items if i["verdict"] != "unclear"]
+    attacks = [i for i in decided if i["goal"] != "benign"]
+    benign = [i for i in decided if i["goal"] == "benign"]
+    by_id: dict[str, dict] = {}
+    for item in items:
+        if item["verdict"] == "attack_succeeded":
+            by_id.setdefault(item["scenario_id"], item)
+    issues = []
+    for fix in fixes:
+        failed = [by_id[s] for s in fix.scenario_ids if s in by_id]
+        if not failed:
+            continue
+        goals = [i["goal"] for i in failed]
+        goal = max(set(goals), key=goals.count)
+        first = next(i for i in failed if i["goal"] == goal)
+        issues.append(
+            {
+                "goal": goal,
+                "title": plain.GOAL_FAILED.get(goal, "הבוט נכשל"),
+                "when": "" if goal == "benign" else plain.when(first["technique"]),
+                "fix_he": fix.suggestion.he,
+                "fix_en": fix.suggestion.en,
+                "count": len(failed),
+                "example": {"message": first["message"], "reply": first["reply"]},
+            }
+        )
+    return {
+        "attempts": len(decided),
+        "held": sum(i["verdict"] != "attack_succeeded" for i in decided),
+        "failed": sum(i["verdict"] == "attack_succeeded" for i in decided),
+        "unclear": len(items) - len(decided),
+        "attack_failures": sum(i["verdict"] == "attack_succeeded" for i in attacks),
+        "benign": {
+            "total": len(benign),
+            "refused": sum(i["verdict"] == "attack_succeeded" for i in benign),
+        },
+        "issues": issues,
     }
 
 
@@ -496,6 +612,27 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
             "path": data["path"],
             "data": target_file.model_dump(mode="json", exclude_none=True),
         }
+    if method == "POST" and path == "/api/wizard/save":
+        return {"path": app.save_wizard(data["answers"], data.get("path"))}
+    if method == "GET" and path == "/api/wizard/load":
+        try:
+            answers = wizard.load(app.root, data["path"])
+        except ValueError as exc:
+            raise ApiError(str(exc), 404) from exc
+        return {
+            "path": data["path"],
+            "answers": answers.model_dump(mode="json"),
+            "tested_goals": answers.tested_goals,
+        }
+    if method == "GET" and path == "/api/wizard/checks":
+        return {"checks": app.checks()}
+    if method == "GET" and path == "/api/wizard/texts":
+        return {
+            "goals": [
+                {"goal": g, "title": plain.GOAL_CHOICE[g][0], "hint": plain.GOAL_CHOICE[g][1]}
+                for g in plain.GOALS
+            ]
+        }
     if method == "POST" and path == "/api/target/save":
         return {"path": app.save_target(data["data"], data.get("path"))}
     if method == "POST" and path == "/api/target/test":
@@ -530,6 +667,7 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
                     "goal": s.attacker_goal or "benign",
                     "technique": s.technique,
                     "message": s.turns[0].content,
+                    "plain": plain.attempt(s.attacker_goal, s.technique),
                 }
                 for s in scenarios
             ],
@@ -548,7 +686,7 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
     if method == "POST" and path == "/api/scan/stop":
         job = app.jobs.get(data["batch"])
         if job is None:
-            raise ApiError("scan not found", 404)
+            raise ApiError("הבדיקה הזו לא נמצאה.", 404)
         job.stop_event.set()
         return {"ok": True}
     if method == "GET" and path == "/api/scan/status":
@@ -561,7 +699,7 @@ def route(app: App, method: str, path: str, data: dict) -> Any:
         with connect(app.db_path) as conn:
             rows = conn.execute("SELECT * FROM runs WHERE batch = ?", (data["batch"],)).fetchall()
         return [_run_item(record_from_row(r), None) for r in rows]
-    raise ApiError("not found", 404)
+    raise ApiError("לא נמצא.", 404)
 
 
 def serve(

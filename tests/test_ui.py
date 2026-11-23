@@ -84,7 +84,7 @@ def test_state_lists_targets(ui):
 def test_paths_must_stay_inside_the_project(ui):
     _, call = ui
     status, body = call("/api/target?path=../../etc/passwd.yaml")
-    assert status == 400 and "inside the project" in body["error"]
+    assert status == 400 and "תיקיית הפרויקט" in body["error"]
 
 
 def test_save_new_target_and_refuse_overwriting_examples(ui, tmp_path):
@@ -96,7 +96,7 @@ def test_save_new_target_and_refuse_overwriting_examples(ui, tmp_path):
     assert status == 200 and saved["path"] == "targets/my-clinic-bot.yaml"
     assert (tmp_path / "targets" / "my-clinic-bot.yaml").exists()
     status, body = call("/api/target/save", {"data": data, "path": TOY})
-    assert status == 400 and "read-only" in body["error"]
+    assert status == 400 and "קובצי הדוגמה" in body["error"]
 
 
 def test_save_reports_validation_errors(ui):

@@ -52,7 +52,7 @@ hebjudge init
 
 Create a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Then either:
 
-- open the interface (step 4) and paste it under **Settings**, or
+- open the interface (step 4) and paste it on the first screen, or
 - run `hebjudge key set` and paste it (it is not shown while you type).
 
 The key is saved in `~/.hebjudge/config.env`, readable by your user only, and never in your project folder. `hebjudge key test` checks it at no cost.
@@ -69,9 +69,13 @@ Next time, open a terminal in the same folder, activate the environment (step 2)
 
 ## 5. First steps in the interface
 
-1. **Agents:** run **Test connection** on *Toy agent*. It is free and needs no key.
-2. **Scan:** pick the toy agent and look at the messages that would be sent. A quick scan of it costs about $0.04 for the judge.
-3. **Your own agent:** **New agent**, then fill in how to connect and its profile: what it may do, what is secret, what is forbidden, and a few legitimate requests.
+The interface opens on a guided check. Click **מתחילים בדיקה** (start a check) and answer three questions:
+
+1. **Your bot:** paste the instructions you wrote for it, or its API address. To try HebJudge first without a bot of your own, choose the example bot.
+2. **What it must not do:** five things nearly every bot must avoid are already checked. Untick what does not apply, and add your own in your words.
+3. **Check:** see how many attempts will be sent, how long it takes and the most it can cost, then start. A quick check usually costs a few cents.
+
+The result gives a ready sentence for each problem. Add it to the bot's instructions and click **תיקנתי, לבדוק שוב** (fixed it, check again): the same attempts run again, and the result shows what improved. Agent files, all templates and comparisons are under **מצב מתקדם** (Advanced).
 
 ## Updating
 
