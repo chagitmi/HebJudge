@@ -417,9 +417,6 @@ body.guided .bench { grid-template-columns: auto 1fr; }
 .g-sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
 .g-sw.held { background: rgba(223, 230, 232, 0.75); }
 .g-sw.broke { background: var(--breach); }
-.g-compare { padding: 14px 18px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); margin-bottom: 6px; }
-.g-compare.better { border-inline-start: 3px solid var(--hold); }
-.g-compare.worse { border-inline-start: 3px solid var(--breach); }
 .g-issue { margin-top: 18px; padding: 0; overflow: hidden; }
 .g-issue-head { display: grid; grid-template-columns: 38px 1fr; gap: 14px; padding: 20px 24px 6px; }
 .g-issue-n { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: var(--breach); border: 2px solid var(--breach); }
@@ -461,3 +458,18 @@ body.guided .bench { grid-template-columns: auto 1fr; }
 .g-technical summary { cursor: pointer; color: var(--ink-3); font-size: 0.85rem; }
 .g-technical p { margin: 6px 0 0; font-family: var(--mono); font-size: 0.8rem; color: var(--ink-3); overflow-wrap: anywhere; text-align: left; }
 .g-page [aria-invalid="true"] { border-color: var(--breach); box-shadow: 0 0 0 1px var(--breach); }
+
+/* before and after, as two rings */
+.g-compare { margin: 4px 0 8px; padding: 20px 24px 18px; border-radius: 16px; border: 1px solid var(--border-2); background: var(--surface); }
+.g-compare h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.g-compare.better { border-color: rgba(240, 181, 92, 0.6); background: var(--gold-soft); }
+.g-compare.worse { border-color: rgba(232, 138, 102, 0.6); background: var(--breach-soft); }
+.g-compare-rings { display: flex; align-items: center; gap: 26px; flex-wrap: wrap; }
+.g-compare-side { margin: 0; display: flex; align-items: center; gap: 14px; }
+.g-compare-side figcaption { display: grid; line-height: 1.35; }
+.g-compare-side figcaption strong { font-size: 1.05rem; }
+.g-compare-side figcaption span { color: var(--ink-2); }
+.g-compare-side .g-donut-center strong { font-size: 1.6rem; }
+.g-compare-side .g-donut-center span { font-size: 0.78rem; }
+.g-compare-arrow { font-size: 1.8rem; color: var(--gold); line-height: 1; }
+.g-compare-verdict { margin: 14px 0 0; font-size: 1.12rem; font-weight: 600; color: var(--ink); }

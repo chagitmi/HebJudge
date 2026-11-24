@@ -539,14 +539,37 @@ async function viewGuidedResult(batch) {
   const { checks } = await api("/api/wizard/checks");
   const check = checks.find((c) => c.name === r.target);
   const previous = state.scans.filter((s) => s.target === r.target && s.created < r.created)[0];
+  /* Before and after: the previous check of the same bot, with the same attempts, as two rings. */
   const compareBox = h("div");
   if (previous) {
-    api(`/api/compare?before=${encodeURIComponent(previous.batch)}&after=${encodeURIComponent(batch)}`)
-      .then((c) => {
-        const before = c.goals.reduce((n, g) => n + g.before, 0);
-        const after = c.goals.reduce((n, g) => n + g.after, 0);
-        const text = after < before ? `בבדיקה הקודמת הבוט נכשל ב-${before}. עכשיו ב-${after}. התיקון עזר.` : after > before ? `בבדיקה הקודמת הבוט נכשל ב-${before}, ועכשיו ב-${after}. כדאי לבדוק מה השתנה.` : `בבדיקה הקודמת הבוט נכשל ב-${before}, וגם עכשיו ב-${after}.`;
-        fill(compareBox, h("div", { class: `g-compare ${after < before ? "better" : after > before ? "worse" : ""}` }, h("strong", {}, "לפני ואחרי: "), text, c.repeats === 1 && Math.abs(after - before) === 1 ? " (בבדיקה מהירה, הבדל של ניסיון אחד יכול להיות מקרי.)" : ""));
+    Promise.all([
+      api(`/api/compare?before=${encodeURIComponent(previous.batch)}&after=${encodeURIComponent(batch)}`),
+      api(`/api/scan/result?batch=${encodeURIComponent(previous.batch)}`),
+    ])
+      .then(([c, prev]) => {
+        const before = prev.failed;
+        const after = r.failed;
+        const tone = after < before ? "better" : after > before ? "worse" : "same";
+        const verdict =
+          tone === "better"
+            ? after === 0
+              ? `התיקון עבד: כל ${before} הכישלונות נסגרו.`
+              : `התיקון עזר: ${plural(before - after, "כישלון אחד נסגר", "כישלונות נסגרו")}, ${plural(after, "ונשאר עוד אחד", "ונשארו עוד")}.`
+            : tone === "worse"
+              ? `עכשיו יש יותר כישלונות מקודם (${before} לפני, ${after} עכשיו). כדאי לבדוק מה השתנה בהוראות.`
+              : `אין שינוי: ${plural(after, "כישלון אחד", "כישלונות")} גם לפני וגם עכשיו.`;
+        const side = (label, res) => h("figure", { class: "g-compare-side" }, donut(res.held, res.failed, 96), h("figcaption", {}, h("strong", {}, label), h("span", {}, res.failed ? `נכשל ב-${res.failed}` : "לא נכשל")));
+        fill(
+          compareBox,
+          h(
+            "section",
+            { class: `g-compare ${tone}`, "aria-label": "לפני ואחרי" },
+            h("h2", {}, "לפני ואחרי"),
+            h("div", { class: "g-compare-rings" }, side("לפני", prev), h("span", { class: "g-compare-arrow", "aria-hidden": "true" }, "←"), side("אחרי", r)),
+            h("p", { class: "g-compare-verdict" }, verdict),
+            c.repeats === 1 && Math.abs(after - before) === 1 ? h("p", { class: "muted small", style: "margin:4px 0 0" }, "בבדיקה מהירה, הבדל של ניסיון אחד יכול להיות מקרי.") : null
+          )
+        );
       })
       .catch(() => {});
   }
