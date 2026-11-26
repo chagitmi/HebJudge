@@ -113,3 +113,31 @@ def expand_env(text: str, environ: dict[str, str] | None = None) -> str:
         return env[name]
 
     return ENV_REF.sub(replace, text)
+
+
+_SECRET_NAME = re.compile(r"auth|token|key|secret|password|cookie|session", re.IGNORECASE)
+_SECRET_VALUE = re.compile(
+    r"\bsk-[A-Za-z0-9_-]{8,}|\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE
+)
+
+LITERAL_SECRET_MESSAGE = (
+    "בכותרות יש טוקן או מפתח שכתוב כמו שהוא, והוא היה נשמר בקובץ. "
+    "כותבים במקומו שם של משתנה סביבה, למשל ‎Bearer ${MY_TOKEN}‎, "
+    "ומגדירים את MY_TOKEN במחשב לפני שמפעילים את HebJudge."
+)
+
+
+def literal_secret_headers(headers: dict[str, str]) -> list[str]:
+    """Header names whose value looks like a secret typed in as is, instead of ${VAR} (D-49).
+
+    Only for saving from the UI: a file written by hand still loads, so nothing that worked
+    before stops working.
+    """
+    found = []
+    for name, value in headers.items():
+        text = str(value)
+        if "${" in text:
+            continue
+        if (_SECRET_NAME.search(name) and text.strip()) or _SECRET_VALUE.search(text):
+            found.append(name)
+    return found

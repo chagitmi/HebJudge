@@ -9,6 +9,7 @@ import json
 import re
 import secrets
 import threading
+import traceback
 import uuid
 import webbrowser
 from dataclasses import asdict, dataclass, field
@@ -28,11 +29,31 @@ from hebjudge.profile import new_canary
 from hebjudge.report import final_verdict
 from hebjudge.schema import load_scenarios
 from hebjudge.targets import HELLO_MESSAGE, TargetError, TargetFile, build_target
-from hebjudge.targets.config import load_target_file
+from hebjudge.targets.config import (
+    LITERAL_SECRET_MESSAGE,
+    literal_secret_headers,
+    load_target_file,
+)
 from hebjudge.templates import load_templates
 from hebjudge.trace_store import DEFAULT_DB_PATH, RunRecord, connect, record_from_row
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# The page may load only its own files, and only talk to this server (D-49). Inline styles stay
+# allowed: the page sets a few sizes with style attributes; inline scripts do not.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
+    "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+)
+
+# What the person reads when a request goes wrong; the details stay out of the page (D-49).
+WRONG_ADDRESS = "אפשר לפתוח את HebJudge רק מהמחשב הזה, בכתובת שמופיעה בחלון הטרמינל."
+OLD_PAGE = "הדף הזה נפתח לפני ש-HebJudge הופעל מחדש. מרעננים את הדף (F5) ומנסים שוב."
+BAD_REQUEST = "הבקשה לא הגיעה כמו שצריך. מרעננים את הדף (F5) ומנסים שוב."
+UNEXPECTED = (
+    "משהו השתבש. מרעננים את הדף (F5) ומנסים שוב. אם זה חוזר, הפרטים הטכניים מופיעים בחלון הטרמינל."
+)
 TARGET_DIRS = (Path("targets"), Path("examples") / "targets")  # searched for target files
 NEW_TARGETS_DIR = Path("targets")  # where the UI saves new target files
 CONTENT_TYPES = {
@@ -127,6 +148,8 @@ class App:
             target_file = TargetFile.model_validate(data)
         except ValueError as exc:
             raise ApiError(_pydantic_message(exc)) from exc
+        if literal_secret_headers(getattr(target_file.target, "headers", None) or {}):
+            raise ApiError(LITERAL_SECRET_MESSAGE)
         if relative:
             path = self.resolve(relative)
             if "examples" in path.parts:
@@ -188,8 +211,11 @@ class App:
         except (ValueError, TargetError) as exc:
             raise ApiError(str(exc)) from exc
 
-        if wizard.answers_path(self.root / body["path"]).is_file():
+        try:
             answers = wizard.load(self.root, body["path"])
+        except ValueError:
+            answers = None  # not a guided check: nothing to remember
+        if answers is not None:
             answers.last_scan = {
                 "level": level.name,
                 "languages": body.get("languages"),
@@ -513,6 +539,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+            self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
             self.wfile.write(body)
 
@@ -529,7 +557,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:  # noqa: N802
             if not self._allowed_host():
-                self._json({"error": "forbidden host"}, 403)
+                self._json({"error": WRONG_ADDRESS}, 403)
                 return
             url = urlparse(self.path)
             if not url.path.startswith("/api/"):
@@ -539,13 +567,16 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:  # noqa: N802
             if not self._allowed_host():
-                self._json({"error": "forbidden host"}, 403)
+                self._json({"error": WRONG_ADDRESS}, 403)
                 return
-            length = int(self.headers.get("Content-Length") or 0)
             try:
+                length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length) or b"{}")
-            except json.JSONDecodeError:
-                self._json({"error": "invalid JSON"}, 400)
+            except ValueError:  # also covers a bad JSON body
+                self._json({"error": BAD_REQUEST}, 400)
+                return
+            if not isinstance(body, dict):
+                self._json({"error": BAD_REQUEST}, 400)
                 return
             self._api("POST", urlparse(self.path).path, body)
 
@@ -563,14 +594,17 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
 
         def _api(self, method: str, path: str, data: dict) -> None:
             if not secrets.compare_digest(self.headers.get("X-HebJudge-Token", ""), app.token):
-                self._json({"error": "forbidden"}, 403)
+                self._json({"error": OLD_PAGE}, 403)
                 return
             try:
                 self._json(route(app, method, path, data))
             except ApiError as exc:
                 self._json({"error": str(exc)}, exc.status)
-            except (KeyError, TypeError, ValueError) as exc:
-                self._json({"error": f"bad request: {exc}"}, 400)
+            except (KeyError, TypeError, ValueError):
+                self._json({"error": BAD_REQUEST}, 400)
+            except Exception:  # noqa: BLE001 - the person gets a plain message, the terminal the details
+                traceback.print_exc()
+                self._json({"error": UNEXPECTED}, 500)
 
     return Handler
 

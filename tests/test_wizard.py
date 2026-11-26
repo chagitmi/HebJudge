@@ -241,3 +241,32 @@ def test_bad_answers_get_a_plain_hebrew_message(ui, bad, says):
     assert says in body["error"], body["error"]
     assert not any(word in body["error"] for word in TECHNICAL), body["error"]
     assert not re.search(r"https?://\w", body["error"]), body["error"]  # no links
+
+
+def test_a_token_typed_into_the_headers_is_not_saved(ui, tmp_path):
+    call, _ = ui
+    bad = {
+        "mode": "api",
+        "name": "בוט",
+        "about": "עונה על שאלות",
+        "url": "https://bot.example.com/chat",
+        "goals": ALL_GOALS,
+        "headers": {"Authorization": "Bearer abcdefgh12345678"},
+    }
+    status, body = call("/api/wizard/save", {"answers": bad})
+    assert status == 400 and "משתנה סביבה" in body["error"], body["error"]
+    assert "abcdefgh12345678" not in body["error"]
+    assert not any(word in body["error"] for word in ("type=", "input_value", "pydantic"))
+    assert not list(tmp_path.rglob("*.wizard.json"))  # nothing written
+    good = dict(bad, headers={"Authorization": "Bearer ${BOT_TOKEN}"})
+    status, body = call("/api/wizard/save", {"answers": good})
+    assert status == 200, body
+
+
+def test_answers_load_only_from_the_checks_folder(tmp_path):
+    secret = tmp_path / "elsewhere"
+    secret.mkdir()
+    (secret / "x.wizard.json").write_text("{}", encoding="utf-8")
+    for path in ("elsewhere/x.yaml", "targets/../elsewhere/x.yaml", "../x.yaml"):
+        with pytest.raises(ValueError, match="לא נמצאה"):
+            wizard.load(tmp_path, path)

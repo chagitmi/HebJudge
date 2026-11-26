@@ -21,7 +21,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from hebjudge import plain
 from hebjudge.profile import new_canary
 from hebjudge.targets import TargetFile
-from hebjudge.targets.config import load_target_file
+from hebjudge.targets.config import (
+    LITERAL_SECRET_MESSAGE,
+    literal_secret_headers,
+    load_target_file,
+)
 
 Goal = Literal[
     "leak_system_prompt",
@@ -83,6 +87,8 @@ class Answers(BaseModel):
                 raise ValueError("כתובת ה-API צריכה להתחיל ב-http:// או https://")
             if not self.about.strip():
                 raise ValueError("חסר תיאור קצר של מה שהבוט עושה")
+            if literal_secret_headers(self.headers):
+                raise ValueError(LITERAL_SECRET_MESSAGE)
         return self
 
     @property
@@ -256,7 +262,10 @@ def save(answers: Answers, root: Path, relative: str | None = None) -> str:
 
 
 def load(root: Path, relative: str) -> Answers:
-    path = answers_path(root / relative)
+    target = (root / relative).resolve()
+    if target.parent != (root / WIZARD_DIR).resolve() or target.suffix != ".yaml":
+        raise ValueError("הבדיקה הזו לא נמצאה. אולי הקובץ שלה נמחק.")
+    path = answers_path(target)
     if not path.is_file():
         raise ValueError("הבדיקה הזו לא נמצאה. אולי הקובץ שלה נמחק.")
     return Answers.model_validate(json.loads(path.read_text(encoding="utf-8")))

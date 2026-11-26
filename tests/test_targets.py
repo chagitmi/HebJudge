@@ -291,3 +291,26 @@ def test_cli_target_test_reports_config_errors(tmp_path, capsys):
     path = write(tmp_path, "name: x\ntarget:\n  adapter: telepathy\n")
     assert main(["target", "test", str(path)]) == 1
     assert "Error" in capsys.readouterr().out
+
+
+# Secrets typed into headers (D-49) ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("headers", "flagged"),
+    [
+        ({"Authorization": "Bearer ${MY_TOKEN}"}, []),
+        ({"X-Api-Key": "${KEY}"}, []),
+        ({"Accept": "application/json", "X-Org": "acme"}, []),
+        ({"Authorization": "Bearer abcdefgh12345678"}, ["Authorization"]),
+        ({"x-api-key": "12345"}, ["x-api-key"]),
+        ({"Cookie": "session=abc"}, ["Cookie"]),
+        ({"X-Custom": "sk-proj-abcdefgh1234"}, ["X-Custom"]),
+        ({"X-Custom": "Bearer abcdefgh12345678"}, ["X-Custom"]),
+        ({"X-Api-Key": ""}, []),
+    ],
+)
+def test_literal_secret_headers(headers, flagged):
+    from hebjudge.targets.config import literal_secret_headers
+
+    assert literal_secret_headers(headers) == flagged

@@ -1,6 +1,7 @@
 """Tests for the local UI server (D-45). Offline: the toy agent and a fake judge."""
 
 import json
+import re
 import shutil
 import threading
 import time
@@ -191,3 +192,99 @@ def test_init_endpoint_copies_examples(ui, tmp_path):
     shutil.rmtree(tmp_path / "examples")
     _, body = call("/api/init", {})
     assert body["written"] > 0 and (tmp_path / "examples" / "toy_agent.py").exists()
+
+
+# Hardening (D-49) -----------------------------------------------------------------------
+
+TECHNICAL_WORDS = ("forbidden", "bad request", "invalid JSON", "Traceback", "Error", "KeyError")
+
+
+def _raw(app_call_base, path, data, token):
+    """A POST with a body that is not valid JSON, sent as is."""
+    request = urllib.request.Request(app_call_base + path, method="POST", data=data)
+    request.add_header("X-HebJudge-Token", token)
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
+def test_every_response_carries_a_content_security_policy(ui):
+    app, call = ui
+    for path in ("/", "/app.js", "/api/state"):
+        request = urllib.request.Request(_base(call) + path)
+        request.add_header("X-HebJudge-Token", app.token)
+        with urllib.request.urlopen(request) as response:
+            policy = response.headers["Content-Security-Policy"]
+            assert "script-src 'self'" in policy and "frame-ancestors 'none'" in policy
+
+
+def _base(call):
+    for cell in call.__closure__:
+        if isinstance(cell.cell_contents, str) and cell.cell_contents.startswith("http://"):
+            return cell.cell_contents
+    raise AssertionError("no base address")
+
+
+def test_refusals_are_in_plain_hebrew(ui):
+    app, call = ui
+    for status, body in (
+        call("/api/state", token="wrong"),
+        call("/api/state", host="evil.example.com"),
+        call("/api/target"),  # a missing field
+        call("/api/target/save", {"nothing": 1}),
+        _raw(_base(call), "/api/target/save", b"{not json", app.token),
+        _raw(_base(call), "/api/target/save", b"[1, 2]", app.token),
+    ):
+        assert status in (400, 403), (status, body)
+        assert re.search(r"[֐-׿]", body["error"]), body
+        assert not any(word in body["error"] for word in TECHNICAL_WORDS), body
+
+
+def test_an_unexpected_failure_gets_a_plain_message(ui, monkeypatch, capsys):
+    app, call = ui
+
+    def broken():
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(app, "scans", broken)
+    status, body = call("/api/state")
+    assert status == 500 and "השתבש" in body["error"]
+    assert "disk on fire" not in body["error"]
+    assert "disk on fire" in capsys.readouterr().err  # the details go to the terminal
+
+
+def test_a_token_typed_into_a_target_file_is_not_saved(ui, tmp_path):
+    _, call = ui
+    _, loaded = call(f"/api/target?path={TOY}")
+    data = loaded["data"]
+    data["name"] = "Bot with a token"
+    data["target"] = {
+        "adapter": "http",
+        "url": "https://bot.example.com/chat",
+        "headers": {"Authorization": "Bearer abcdefgh12345678"},
+        "body": {"message": "{{message}}"},
+        "reply_path": "reply",
+    }
+    status, body = call("/api/target/save", {"data": data, "path": None})
+    assert status == 400 and "משתנה סביבה" in body["error"]
+    assert not (tmp_path / "targets" / "bot-with-a-token.yaml").exists()
+    data["target"]["headers"] = {"Authorization": "Bearer ${BOT_TOKEN}"}
+    status, body = call("/api/target/save", {"data": data, "path": None})
+    assert status == 200, body
+
+
+def test_guided_answers_cannot_be_read_from_outside_their_folder(ui, tmp_path):
+    _, call = ui
+    from hebjudge import wizard
+
+    valid = wizard.Answers(
+        mode="instructions", name="בוט", instructions="x", goals=["role_abandonment"]
+    )
+    text = valid.model_dump_json()
+    (tmp_path / "x.wizard.json").write_text(text, encoding="utf-8")  # a real answers file...
+    (tmp_path / "examples" / "x.wizard.json").write_text(text, encoding="utf-8")
+    for path in ("x.yaml", "examples/x.yaml", "targets/../x.yaml"):  # ...outside targets/
+        status, body = call(f"/api/wizard/load?path={path}")
+        assert status == 404 and "לא נמצאה" in body["error"], (path, status)
